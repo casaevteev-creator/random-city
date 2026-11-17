@@ -309,3 +309,9 @@ svg.i { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor;
 .mood img.mthumb { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; margin-left: -8px; }
 .catrow img.thumb { width: 56px; height: 44px; border-radius: 12px; object-fit: cover; flex: none; }
 .sheet .banner { display: block; width: calc(100% + 40px); height: 160px; margin: -20px -20px 16px; object-fit: cover; border-radius: 28px 28px 0 0; }
+
+/* ---------- надёжная загрузка картинок ---------- */
+.ava.img, .mood img.mthumb, .catrow img.thumb, .sheet .banner, .ranks img, .rankup .badge-big, .mission.photo, .scene.photo {
+  background-color: #C44B8A; background-image: var(--sunset); }
+img.broken { visibility: hidden; }
+.mission.photo img.art, .scene.photo img.art, .catrow img.thumb, .mood img.mthumb, .ava.img, .sheet .banner { transition: opacity .35s; }

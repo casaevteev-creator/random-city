@@ -68,8 +68,10 @@
   const SEASON1_END = "2026-12-19";
   // темы мечт: id + иконка
   const CATS = [["travel", "globe"], ["sport", "medal"], ["thrill", "zap"], ["love", "heart"], ["nature", "leaf"], ["chill", "sun"], ["lux", "diamond"], ["crime", "mask"]];
-  const catImg = (c) => `assets/cats/${c}.jpg`;
-  const rankImg = (i) => `assets/ranks/${i}.jpg`;
+  // версия ассетов: меняй при каждом обновлении картинок, чтобы Telegram не брал старые из кэша
+  const V = window.APP_VERSION || "1";
+  const catImg = (c) => `assets/cats/${c}.webp?v=${V}`;
+  const rankImg = (i) => `assets/ranks/${i}.webp?v=${V}`;
   const catIcon = (c) => (CATS.find((x) => x[0] === c) || [0, "star"])[1];
   const bName = (b) => t("badge." + b.id), bHint = (b) => t("badge." + b.id + ".hint");
 
@@ -320,6 +322,8 @@
     $$("#nav button").forEach((b) => b.onclick = () => { if (busy) return; haptic(); go(b.dataset.go); });
     $("#nav").classList.toggle("hidden", v === "onboarding" || v === "active");
     if (inTelegram && tg.BackButton) (v === "roll" || v === "duel") ? tg.BackButton.show() : tg.BackButton.hide();
+    // миссия идёт — спрашиваем перед закрытием, чтобы не потерять таймер
+    if (inTelegram) { try { S.active ? tg.enableClosingConfirmation() : tg.disableClosingConfirmation(); } catch (e) {} }
     ({ play: vPlay, onboarding: vOnboarding, roll: vRoll, active: vActive, profile: vProfile, rules: vRules, duel: vDuel }[v] || vPlay)();
     window.scrollTo(0, 0);
   }
@@ -329,7 +333,7 @@
   // ----- онбординг -----
   function vOnboarding() {
     screen().innerHTML = `<div class="onb">
-      <div class="scene photo"><img class="art" src="assets/hero-couple.jpg" alt="" fetchpriority="high">
+      <div class="scene photo"><img class="art" src="assets/hero-couple.webp?v=${V}" alt="" fetchpriority="high">
         <div class="over"><span class="logo">${esc(t("app"))}</span><button class="pill" id="lang">${ic("globe")}${L.code.toUpperCase()}</button></div>
         <div class="hello"><h1 class="t1">${t("onb.title")}</h1><div class="cap">${t("onb.sub")}</div></div>
       </div>
@@ -710,9 +714,24 @@
     const bg = dark ? "#130B21" : "#FFF5EF";
     if (inTelegram) { try { tg.setHeaderColor(bg); tg.setBackgroundColor(bg); } catch (e) {} }
   }
+  // картинки: если WebP не открылся — пробуем JPG, если и он нет — остаётся цветной фон
+  document.addEventListener("error", (e) => {
+    const im = e.target;
+    if (!(im instanceof HTMLImageElement)) return;
+    if (/\.webp(\?|$)/.test(im.src)) { im.src = im.src.replace(".webp", ".jpg"); return; }
+    im.classList.add("broken");
+  }, true);
+  document.addEventListener("load", (e) => { if (e.target instanceof HTMLImageElement) e.target.classList.add("ok"); }, true);
+  function preloadImages() {
+    const list = ["assets/hero-couple.webp?v=" + V, ...CATS.map(([c]) => catImg(c)), ...RANK_AT.map((_, i) => rankImg(i))];
+    list.forEach((src, k) => setTimeout(() => { const im = new Image(); im.decoding = "async"; im.src = src; }, 300 + k * 60));
+  }
+
   async function init() {
     if (inTelegram) {
       tg.ready(); tg.expand();
+      // не закрывать приложение свайпом вниз при прокрутке (Bot API 7.7+)
+      try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
       tg.onEvent && tg.onEvent("themeChanged", applyTheme);
       if (tg.BackButton) tg.BackButton.onClick(() => { if (busy) return; S.pending = null; save(); go("play"); });
     } else window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
@@ -730,6 +749,7 @@
     setLang(S.lang || detectLang());
     pendingDuel = readStartParam();
     if (!S.platform) go("onboarding"); else if (pendingDuel) go("duel"); else go("play");
+    preloadImages();
   }
   window.__rc = { dreamTotal, generate, partsOf, dayKey, prevDay, seedCode, codeSeed, setLang, t, get state() { return S; } };
   init();
