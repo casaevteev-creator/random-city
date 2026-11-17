@@ -1,19 +1,20 @@
 /* =========================================================
-   РАНДОМ СИТИ — v0.3, стиль «Вайс-закат» (см. STYLE.md)
+   РАНДОМ СИТИ — v2 «Тебе пишут»
+   Миссии приходят сообщениями от контактов из Леониды.
    Без сервера: прогресс в облаке Telegram (CloudStorage) + в браузере.
    ========================================================= */
 (() => {
   "use strict";
 
   const CFG = window.CONFIG;
-  const P = window.PARTS;
+  const M = window.MISSIONS;
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const inTelegram = !!(tg && tg.initData);
   const root = document.documentElement;
+  const V = window.APP_VERSION || "1";
 
   // ---------- языки ----------
-  const LANGS = window.I18N;
-  const RU = LANGS.ru;
+  const LANGS = window.I18N, RU = LANGS.ru;
   let L = RU;
   const RU_LIKE = ["ru", "be", "kk", "ky", "uz", "tg", "hy", "az"];
   function detectLang() {
@@ -22,66 +23,43 @@
     if (LANGS[code]) return code;
     return RU_LIKE.includes(code) ? "ru" : (LANGS.en ? "en" : "ru");
   }
-  function setLang(code) {
-    L = LANGS[code] || RU;
-    root.lang = L.code;
-    document.title = t("app");
-  }
-  // t("ключ", {n: 5}) -> строка на текущем языке (если перевода нет — русский)
+  function setLang(code) { L = LANGS[code] || RU; root.lang = L.code; document.title = t("app"); }
   function t(key, vars = {}) {
     let v = L.ui[key] !== undefined ? L.ui[key] : RU.ui[key] !== undefined ? RU.ui[key] : key;
     if (typeof v === "object") {
-      const lc = L.ui[key] !== undefined ? L.locale : RU.locale;
-      const cat = new Intl.PluralRules(lc).select(vars.n || 0);
+      const cat = new Intl.PluralRules(L.ui[key] !== undefined ? L.locale : RU.locale).select(vars.n || 0);
       v = v[cat] || v.other || v.many || Object.values(v)[0];
     }
     return String(v).replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : "{" + k + "}"));
   }
-  // текст части задания на текущем языке (без эмодзи)
-  const pt = (part) => (L.parts && L.parts[part.id]) || clean(part.t);
-  const pd = (task) => (L.parts && L.parts[task.id + "#d"]) || task.d || "";
-  const fmtDate = (d) => new Intl.DateTimeFormat(L.locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(d + "T12:00:00Z"));
+  const tx = (o) => (o ? (o[L.code] !== undefined ? o[L.code] : o.ru) : "");
+  const fmtDate = (d) => new Intl.DateTimeFormat(L.locale, { day: "2-digit", month: "2-digit" }).format(new Date(d + "T12:00:00Z"));
 
-  // ---------- справочники ----------
-  const DIFF = {
-    1: { stars: 1, pts: 10, min: 30, taskLvl: [1], restrLvl: [0, 1] },
-    2: { stars: 3, pts: 25, min: 20, taskLvl: [2], restrLvl: [1, 2] },
-    3: { stars: 6, pts: 50, min: 15, taskLvl: [3], restrLvl: [2, 3] },
-  };
+  // ---------- константы ----------
+  const STARS = { 1: { pts: 10, min: 30 }, 3: { pts: 25, min: 20 }, 6: { pts: 50, min: 15 } };
   const DAILY_BONUS = 15;
   const RANK_AT = [0, 60, 200, 500, 1200, 3000];
-  const rankName = (i) => t("rank." + i);
-  const dName = (d) => t("diff." + d);
+  const REL_AT = [1, 3, 6, 10, 15]; // сколько миссий с контактом для 1..5 сердец
+  const MAX_REROLLS = 5;
+  const CONTACTS = Object.keys(M.contacts);
+  const MOODS = [["any", "dice"], ["hard", "zap"], ["fun", "smile"], ["chill", "sun"]];
   const BADGES = [
-    { id: "first",   ic: "target" },
-    { id: "season1", ic: "trophy" },
-    { id: "streak3", ic: "fire" },
-    { id: "streak7", ic: "fire" },
-    { id: "hard10",  ic: "star" },
-    { id: "daily5",  ic: "calendar" },
-    { id: "duelist", ic: "send" },
-    { id: "duelwin", ic: "flag" },
-    { id: "ten",     ic: "check" },
-    { id: "dream10", ic: "heart" },
-    { id: "catfull", ic: "diamond" },
-  ];
+    ["first", "target"], ["season1", "trophy"], ["streak3", "fire"], ["streak7", "fire"], ["hard10", "star"], ["daily5", "calendar"],
+    ["duelist", "send"], ["duelwin", "flag"], ["ten", "check"], ["unk1", "question"], ["allc", "users"],
+  ].map(([id, ic]) => ({ id, ic }));
   const SEASON1_END = "2026-12-19";
-  // темы мечт: id + иконка
-  const CATS = [["travel", "globe"], ["sport", "medal"], ["thrill", "zap"], ["love", "heart"], ["nature", "leaf"], ["chill", "sun"], ["lux", "diamond"], ["crime", "mask"]];
-  // версия ассетов: меняй при каждом обновлении картинок, чтобы Telegram не брал старые из кэша
-  const V = window.APP_VERSION || "1";
   const catImg = (c) => `assets/cats/${c}.webp?v=${V}`;
   const rankImg = (i) => `assets/ranks/${i}.webp?v=${V}`;
-  const catIcon = (c) => (CATS.find((x) => x[0] === c) || [0, "star"])[1];
-  const bName = (b) => t("badge." + b.id), bHint = (b) => t("badge." + b.id + ".hint");
 
-  // ---------- иконки (свои, линейные 2px) ----------
+  // ---------- иконки ----------
   const ICONS = {
     dice: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
+    chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+    grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
-    book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5 6.5-5s5.5 1.5 6.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 15c2.5 0 4.5 1.3 5.5 4"/>',
+    back: '<path d="M15 18l-6-6 6-6"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    shuffle: '<path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>',
     send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     flag: '<path d="M4 22V4M4 4h12l-2 4 2 4H4"/>',
@@ -91,7 +69,6 @@
     calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     ban: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
     camera: '<rect x="2" y="7" width="14" height="12" rx="3"/><path d="M16 11l6-3v10l-6-3"/>',
-    mask: '<path d="M3 9c0-2 2-3 4-3h10c2 0 4 1 4 3 0 5-3 9-6 9-1.5 0-2-2-3-2s-1.5 2-3 2c-3 0-6-4-6-9z"/><circle cx="8.5" cy="11" r="1.4" fill="currentColor"/><circle cx="15.5" cy="11" r="1.4" fill="currentColor"/>',
     volume: '<path d="M11 5 6 9H3v6h3l5 4zM16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/>',
     gamepad: '<rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 12.5h4M9 10.5v4"/><circle cx="16" cy="11.5" r=".9" fill="currentColor"/><circle cx="18" cy="13.5" r=".9" fill="currentColor"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
@@ -99,100 +76,67 @@
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/>',
     medal: '<circle cx="12" cy="9" r="6"/><path d="M8.5 14 7 22l5-3 5 3-1.5-8"/>',
     image: '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>',
-    heart: '<path d="M12 21s-7-4.5-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.5-9.5 9-9.5 9z"/>',
-    leaf: '<path d="M5 21c0-9 6-15 16-16-1 10-7 16-16 16zM5 21l9-9"/>',
-    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-    diamond: '<path d="M6 3h12l4 6-10 12L2 9zM2 9h20M9 3l3 6 3-6"/>',
     zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
-    circle: '<circle cx="12" cy="12" r="9"/>',
-    star: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    smile: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="9.5" r="1" fill="currentColor"/><circle cx="15" cy="9.5" r="1" fill="currentColor"/>',
+    question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5"/><circle cx="12" cy="17" r=".9" fill="currentColor"/>',
+    heart: '<path d="M12 21s-7-4.5-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.5-9.5 9-9.5 9z"/>',
+    book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
   };
   const ic = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
   const STAR = "M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z";
   const stars = (n, of = 6) => `<span class="stars">${Array.from({ length: of }, (_, i) => `<svg viewBox="0 0 24 24"><path class="${i < n ? "on" : "off"}" d="${STAR}"/></svg>`).join("")}</span>`;
 
-  // ---------- сцена «Вайс-закат»: утро / закат / ночь ----------
+  // ---------- сцена «Вайс-закат» (1 утро/день, 2 закат, 3 ночь) ----------
   const LEAVES = [[75, 25, 35, -25, 35, -5], [82, -10, 40, -42, 40, -18], [38, -58, 6, -52, 22, -38], [-32, -52, -6, -54, -16, -36], [-78, -6, -40, -42, -38, -16], [-66, 36, -36, -22, -30, 0]];
   function palm(x, y, s, flip, color) {
-    const k = flip ? -1 : 1;
-    const top = [x + k * 26 * s, y - 150 * s];
+    const k = flip ? -1 : 1, top = [x + k * 26 * s, y - 150 * s];
     const trunk = `<path d="M${x} ${y} C ${x + k * 6 * s} ${y - 60 * s}, ${x + k * 12 * s} ${y - 110 * s}, ${top[0]} ${top[1]}" stroke="${color}" stroke-width="${9 * s}" fill="none" stroke-linecap="round"/>`;
-    const leaves = LEAVES.map(([tx, ty, c1x, c1y, c2x, c2y]) => {
+    return trunk + LEAVES.map(([tx_, ty, c1x, c1y, c2x, c2y]) => {
       const T = (dx, dy) => `${top[0] + k * dx * s} ${top[1] + dy * s}`;
-      return `<path d="M${T(0, 0)} Q ${T(c1x, c1y)} ${T(tx, ty)} Q ${T(c2x, c2y)} ${T(0, 0)} Z" fill="${color}"/>`;
+      return `<path d="M${T(0, 0)} Q ${T(c1x, c1y)} ${T(tx_, ty)} Q ${T(c2x, c2y)} ${T(0, 0)} Z" fill="${color}"/>`;
     }).join("");
-    return trunk + leaves;
   }
   function skyline(color, neon) {
     const b = [[0, 40, 26], [24, 30, 40], [60, 22, 30], [86, 34, 52], [130, 26, 36], [160, 38, 62], [205, 30, 44], [240, 24, 34], [268, 40, 58], [312, 28, 40], [344, 34, 48], [380, 30, 36]];
-    let s = b.map(([x, w, h]) => `<rect x="${x}" y="${215 - h}" width="${w - 3}" height="${h}" fill="${color}"/>` +
-      (h > 50 ? `<rect x="${x + w / 2 - 3}" y="${215 - h - 10}" width="4" height="10" fill="${color}"/>` : "")).join("");
+    let s = b.map(([x, w, h]) => `<rect x="${x}" y="${215 - h}" width="${w - 3}" height="${h}" fill="${color}"/>` + (h > 50 ? `<rect x="${x + w / 2 - 3}" y="${215 - h - 10}" width="4" height="10" fill="${color}"/>` : "")).join("");
     if (neon) s += b.filter((_, i) => i % 2).map(([x, w, h]) => `<rect x="${x + 4}" y="${215 - h + 8}" width="${w - 11}" height="2" fill="${neon}" opacity=".9"/>`).join("");
     return s;
   }
-  function sceneSVG(cls = "art", only) {
-    const L = (tod, inner) => (only && only !== tod) ? "" : `<g class="sky" data-tod="${tod}" style="opacity:${only || tod === S.diff ? 1 : 0}">${inner}</g>`;
+  function sceneSVG(tod) {
     const stripes = `<mask id="sunm"><rect width="400" height="300" fill="#fff"/>${[0, 1, 2, 3, 4].map((i) => `<rect x="0" y="${192 + i * 8}" width="400" height="${2 + i}" fill="#000"/>`).join("")}</mask>`;
-    return `<svg class="${cls}" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <defs>
-        <linearGradient id="sk1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5FD3F3"/><stop offset=".7" stop-color="#BDF0F2"/><stop offset="1" stop-color="#FFE6C7"/></linearGradient>
-        <linearGradient id="sk2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5B2BE0"/><stop offset=".45" stop-color="#FF4D8D"/><stop offset=".72" stop-color="#FF8A4C"/><stop offset="1" stop-color="#FFC24B"/></linearGradient>
-        <linearGradient id="sk3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B0620"/><stop offset=".6" stop-color="#2B1166"/><stop offset="1" stop-color="#C2187A"/></linearGradient>
-        <linearGradient id="sun2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE45C"/><stop offset="1" stop-color="#FF4D8D"/></linearGradient>
-        <linearGradient id="sea1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#18C3C6"/><stop offset="1" stop-color="#0E8FA8"/></linearGradient>
-        <linearGradient id="sea2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C2306F"/><stop offset="1" stop-color="#4A1A7A"/></linearGradient>
-        <linearGradient id="sea3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A0F5E"/><stop offset="1" stop-color="#0B0620"/></linearGradient>
-        ${stripes}
-      </defs>
-      ${L(1, `<rect width="400" height="300" fill="url(#sk1)"/>
-        <circle cx="318" cy="70" r="30" fill="#FFF3B0"/><circle cx="318" cy="70" r="46" fill="#FFF3B0" opacity=".25"/>
-        <path d="M40 60c10-8 24-8 34 0 8-4 18-2 22 6H30c0-4 4-6 10-6z" fill="#fff" opacity=".85"/>
-        <path d="M190 40c8-6 20-6 28 0 6-3 14-1 18 5h-54c0-3 3-5 8-5z" fill="#fff" opacity=".7"/>
-        ${skyline("#5A9DB5")}<rect y="214" width="400" height="86" fill="url(#sea1)"/>
-        ${[0, 1, 2, 3].map((i) => `<rect x="${60 + i * 80}" y="${232 + i * 14}" width="${50 - i * 6}" height="2" rx="1" fill="#fff" opacity=".5"/>`).join("")}
-        ${palm(30, 310, 1.15, false, "#0F5953")}${palm(372, 310, .9, true, "#0F5953")}`)}
-      ${L(2, `<rect width="400" height="300" fill="url(#sk2)"/>
-        <circle cx="200" cy="200" r="78" fill="url(#sun2)" mask="url(#sunm)"/>
-        ${skyline("#5A1D5E")}<rect y="214" width="400" height="86" fill="url(#sea2)"/>
-        ${[0, 1, 2, 3, 4].map((i) => `<rect x="${150 + i * 6}" y="${224 + i * 12}" width="${100 - i * 12}" height="3" rx="1.5" fill="#FFC24B" opacity="${0.75 - i * 0.12}"/>`).join("")}
-        ${palm(30, 310, 1.15, false, "#2A0B2E")}${palm(372, 310, .9, true, "#2A0B2E")}`)}
-      ${L(3, `<rect width="400" height="300" fill="url(#sk3)"/>
-        ${Array.from({ length: 40 }, (_, i) => `<circle cx="${(i * 97) % 400}" cy="${(i * 53) % 150}" r="${i % 3 ? 0.9 : 1.6}" fill="#fff" opacity="${0.4 + (i % 4) * 0.15}"/>`).join("")}
-        <circle cx="310" cy="62" r="22" fill="#F3EAFF"/><circle cx="320" cy="56" r="20" fill="#1A0B45"/>
-        ${skyline("#170A33", "#FF2E88")}<rect y="214" width="400" height="86" fill="url(#sea3)"/>
-        ${[0, 1, 2].map((i) => `<rect x="${40 + i * 120}" y="${226 + i * 16}" width="70" height="2" rx="1" fill="#FF2E88" opacity=".55"/>`).join("")}
-        ${palm(30, 310, 1.15, false, "#07020F")}${palm(372, 310, .9, true, "#07020F")}`)}
-    </svg>`;
+    const body = tod === 1 ? `<rect width="400" height="300" fill="url(#sk1)"/><circle cx="318" cy="70" r="30" fill="#FFF3B0"/><circle cx="318" cy="70" r="46" fill="#FFF3B0" opacity=".25"/>
+        ${skyline("#5A9DB5")}<rect y="214" width="400" height="86" fill="url(#sea1)"/>${palm(30, 310, 1.15, false, "#0F5953")}${palm(372, 310, .9, true, "#0F5953")}`
+      : tod === 2 ? `<rect width="400" height="300" fill="url(#sk2)"/><circle cx="200" cy="200" r="78" fill="url(#sun2)" mask="url(#sunm)"/>
+        ${skyline("#5A1D5E")}<rect y="214" width="400" height="86" fill="url(#sea2)"/>${[0, 1, 2, 3, 4].map((i) => `<rect x="${150 + i * 6}" y="${224 + i * 12}" width="${100 - i * 12}" height="3" rx="1.5" fill="#FFC24B" opacity="${0.75 - i * 0.12}"/>`).join("")}
+        ${palm(30, 310, 1.15, false, "#2A0B2E")}${palm(372, 310, .9, true, "#2A0B2E")}`
+      : `<rect width="400" height="300" fill="url(#sk3)"/>${Array.from({ length: 40 }, (_, i) => `<circle cx="${(i * 97) % 400}" cy="${(i * 53) % 150}" r="${i % 3 ? 0.9 : 1.6}" fill="#fff" opacity="${0.4 + (i % 4) * 0.15}"/>`).join("")}
+        <circle cx="310" cy="62" r="22" fill="#F3EAFF"/><circle cx="320" cy="56" r="20" fill="#1A0B45"/>${skyline("#170A33", "#FF2E88")}<rect y="214" width="400" height="86" fill="url(#sea3)"/>
+        ${palm(30, 310, 1.15, false, "#07020F")}${palm(372, 310, .9, true, "#07020F")}`;
+    return `<svg class="art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs>
+      <linearGradient id="sk1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5FD3F3"/><stop offset=".7" stop-color="#BDF0F2"/><stop offset="1" stop-color="#FFE6C7"/></linearGradient>
+      <linearGradient id="sk2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5B2BE0"/><stop offset=".45" stop-color="#FF4D8D"/><stop offset=".72" stop-color="#FF8A4C"/><stop offset="1" stop-color="#FFC24B"/></linearGradient>
+      <linearGradient id="sk3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B0620"/><stop offset=".6" stop-color="#2B1166"/><stop offset="1" stop-color="#C2187A"/></linearGradient>
+      <linearGradient id="sun2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE45C"/><stop offset="1" stop-color="#FF4D8D"/></linearGradient>
+      <linearGradient id="sea1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#18C3C6"/><stop offset="1" stop-color="#0E8FA8"/></linearGradient>
+      <linearGradient id="sea2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C2306F"/><stop offset="1" stop-color="#4A1A7A"/></linearGradient>
+      <linearGradient id="sea3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A0F5E"/><stop offset="1" stop-color="#0B0620"/></linearGradient>${stripes}</defs>${body}</svg>`;
   }
-  function setTod(d) {
-    root.dataset.diff = d;
-    $$(".sky").forEach((g) => { g.style.transition = "opacity .6s"; g.style.opacity = +g.dataset.tod === d ? 1 : 0; });
-  }
+  function nowTod() { const h = new Date().getHours(); return h >= 5 && h < 11 ? "morning" : h < 17 ? "day" : h < 21 ? "evening" : "night"; }
+  const todLayer = (tod) => (tod === "evening" ? 2 : tod === "night" ? 3 : 1);
 
   // ---------- утилиты ----------
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const byId = (arr, id) => arr.find((x) => x.id === id);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const dayKey = (t = Date.now()) => new Date(t + 3 * 3600e3).toISOString().slice(0, 10); // по Москве
+  const dayKey = (tm = Date.now()) => new Date(tm + 3 * 3600e3).toISOString().slice(0, 10);
   const prevDay = (d) => dayKey(Date.parse(d + "T09:00:00Z") - 86400e3);
-  function mulberry32(a) {
-    return function () {
-      a |= 0; a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let x = Math.imul(a ^ (a >>> 15), 1 | a); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; }; }
   function hash32(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   const randSeed = () => crypto.getRandomValues(new Uint32Array(1))[0] >>> 0;
   const seedCode = (s) => (s >>> 0).toString(36).toUpperCase();
   const codeSeed = (c) => parseInt(c, 36) >>> 0;
-  // эмодзи из текстов контента не показываем — у нас свои иконки
-  const clean = (t) => t.replace(/^(\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic}|\p{Emoji_Modifier})*)\s*/u, "");
-  const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
-
   function haptic(kind) {
     if (!inTelegram || !tg.HapticFeedback) return;
     try {
@@ -210,15 +154,15 @@
     });
   }
 
-  // ---------- звук (синтез) ----------
+  // ---------- звук ----------
   const Sound = (() => {
     let ctx = null;
     const ac = () => { if (!S.sound) return null; try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === "suspended") ctx.resume(); } catch (e) { return null; } return ctx; };
     function tone(f, dur, type = "sine", vol = 0.06, when = 0) {
       const c = ac(); if (!c) return;
-      const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + when;
-      o.type = type; o.frequency.setValueAtTime(f, t); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+      const o = c.createOscillator(), g = c.createGain(), tm = c.currentTime + when;
+      o.type = type; o.frequency.setValueAtTime(f, tm); g.gain.setValueAtTime(vol, tm); g.gain.exponentialRampToValueAtTime(0.0001, tm + dur);
+      o.connect(g).connect(c.destination); o.start(tm); o.stop(tm + dur + 0.02);
     }
     function noise(dur, vol, cut) {
       const c = ac(); if (!c) return;
@@ -228,78 +172,128 @@
       f.type = "lowpass"; f.frequency.value = cut; g.gain.value = vol; s.buffer = b; s.connect(f).connect(g).connect(c.destination); s.start();
     }
     return {
+      msg: () => { tone(880, 0.09, "sine", 0.07); tone(1320, 0.12, "sine", 0.06, 0.08); },
+      sent: () => tone(660, 0.06, "triangle", 0.05),
       tick: () => tone(1500 + Math.random() * 200, 0.02, "triangle", 0.03),
-      stop: () => tone(660, 0.08, "triangle", 0.08),
-      spin: () => { noise(0.2, 0.2, 2500); tone(440, 0.12, "triangle", 0.05); },
       tap: () => tone(880, 0.05, "triangle", 0.05),
-      passed: () => { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.3, "triangle", 0.08, i * 0.08)); },
+      passed: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.3, "triangle", 0.08, i * 0.08)),
       wasted: () => { noise(0.5, 0.6, 400); [196, 165, 131].forEach((f, i) => tone(f, 0.5, "sawtooth", 0.04, 0.1 + i * 0.18)); },
     };
   })();
 
   // ---------- хранилище ----------
   const KEY = "rc_state_v1";
-  const fresh = () => ({ v: 1, ts: 0, platform: null, sound: true, points: 0, done: 0, failed: 0, hard: 0, dailyCount: 0,
-    streak: 0, bestStreak: 0, lastDay: null, recent: [], hist: [], badges: {}, rerollDay: null, rerollsUsed: 0,
-    pending: null, active: null, dailyDone: null, diff: 2, cat: "any", dreams: [] });
+  const fresh = () => ({ v: 2, ts: 0, platform: null, sound: true, lang: null, onb: false, mood: "any",
+    points: 0, done: 0, failed: 0, hard: 0, dailyCount: 0, streak: 0, bestStreak: 0, lastDay: null,
+    badges: {}, rel: {}, played: [], unk: 0, recent: [], hist: [], rerollDay: null, rerollsUsed: 0,
+    pending: null, active: null, dailyDone: null });
   let S = fresh();
-  function loadLocal() { try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {} return null; }
+  function migrate(o) {
+    if (!o) return null;
+    if (o.v === 2) return Object.assign(fresh(), o);
+    const n = fresh(); // со старой версии переносим только прогресс
+    ["platform", "sound", "lang", "points", "done", "failed", "hard", "dailyCount", "streak", "bestStreak", "lastDay", "ts"].forEach((k) => { if (o[k] !== undefined) n[k] = o[k]; });
+    Object.keys(o.badges || {}).forEach((k) => { if (BADGES.some((b) => b.id === k)) n.badges[k] = o.badges[k]; });
+    return n;
+  }
+  function loadLocal() { try { const raw = localStorage.getItem(KEY); if (raw) return migrate(JSON.parse(raw)); } catch (e) {} return null; }
   function loadCloud() {
     return new Promise((res) => {
       if (!inTelegram || !tg.CloudStorage) return res(null);
-      try { tg.CloudStorage.getItem(KEY, (err, val) => { if (err || !val) return res(null); try { res(Object.assign(fresh(), JSON.parse(val))); } catch (e) { res(null); } }); } catch (e) { res(null); }
+      try { tg.CloudStorage.getItem(KEY, (err, val) => { if (err || !val) return res(null); try { res(migrate(JSON.parse(val))); } catch (e) { res(null); } }); } catch (e) { res(null); }
     });
   }
   function save() {
-    S.ts = Date.now(); S.hist = S.hist.slice(0, 15); S.recent = S.recent.slice(-15);
+    S.ts = Date.now(); S.hist = S.hist.slice(0, 15); S.recent = S.recent.slice(-8);
     let raw = JSON.stringify(S);
-    // в облаке Telegram на ключ не больше 4096 символов — урезаем историю, но не прогресс
     while (raw.length >= 4000 && S.hist.length > 3) { S.hist.pop(); raw = JSON.stringify(S); }
     try { localStorage.setItem(KEY, raw); } catch (e) {}
     if (inTelegram && tg.CloudStorage && raw.length < 4000) { try { tg.CloudStorage.setItem(KEY, raw, () => {}); } catch (e) {} }
   }
 
   // ---------- генератор миссий ----------
-  function generate(seed, diff, cat) {
-    const rnd = mulberry32(seed), pick = (a) => a[Math.floor(rnd() * a.length)], D = DIFF[diff];
-    const lvlPool = P.tasks.filter((x) => !x.online && D.taskLvl.includes(x.lvl));
-    const catPool = cat && cat !== "any" ? lvlPool.filter((x) => x.cat === cat) : [];
-    const task = pick(catPool.length ? catPool : lvlPool);
-    const hasVeh = ["car", "bike", "boat", "air", "travel"].some((u) => task.uses.includes(u)) && !task.uses.includes("foot");
-    const restrs = P.restrictions.filter((r) => D.restrLvl.includes(r.lvl) && !r.bans.some((b) => task.uses.includes(b)) && (!r.needs || !r.needs.includes("veh") || hasVeh));
-    const restr = pick(restrs.length ? restrs : [P.restrictions[0]]);
-    const seal = pick(P.seals.filter((s) => s.needs.every((n) => task.uses.includes(n))));
-    const role = pick(P.roles);
-    return { seed: seed >>> 0, diff, cat: catPool.length ? cat : "any", role: role.id, task: task.id, restr: restr.id, seal: seal.id, min: Math.max(D.min, task.min || 0) };
+  const tplOf = (m) => M.templates.find((x) => x.id === m.tpl);
+  const tplIndex = (id) => M.templates.findIndex((x) => x.id === id);
+  const pick = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
+  // opt: mood, contact, minStars, maxStars, tpl, noUnk, avoid[]
+  function generate(seed, opt = {}) {
+    const r1 = mulberry32(seed), r2 = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+    let pool = M.templates;
+    if (opt.tpl) pool = pool.filter((x) => x.id === opt.tpl);
+    else if (opt.contact) pool = pool.filter((x) => x.c === opt.contact);
+    else {
+      const mood = opt.mood || "any", roll = r1();
+      if (!opt.noUnk && (mood === "any" || mood === "hard") && roll < 0.08) pool = pool.filter((x) => x.mood === "unk");
+      else pool = pool.filter((x) => x.mood !== "unk" && (mood === "any" || x.mood === mood));
+    }
+    if (opt.minStars) { const p = pool.filter((x) => x.st >= opt.minStars); pool = p.length ? p : M.templates.filter((x) => x.mood !== "unk" && x.st >= opt.minStars); }
+    if (opt.maxStars) { const p = pool.filter((x) => x.st <= opt.maxStars); if (p.length) pool = p; }
+    if (opt.avoid && opt.avoid.length) { const p = pool.filter((x) => !opt.avoid.includes(x.id)); if (p.length) pool = p; }
+    const tp = pick(r1, pool);
+    const Vv = M.vars, ri = (a) => Math.floor(r2() * a.length);
+    const places = Vv.place.map((p, i) => i).filter((i) => !(Vv.place[i].foot && ["car", "boat", "bike"].some((u) => tp.uses.includes(u))));
+    const slots = { car: ri(Vv.car), color: ri(Vv.color), place: places[Math.floor(r2() * places.length)], time: ri(Vv.time), prop: ri(Vv.prop), n: ri(Vv.n) };
+    let twist = null;
+    if (tp.st >= 3 && r2() < 0.75) {
+      const tw = M.twists.filter((x) => x.st <= tp.st && !(x.bans || []).some((b) => tp.uses.includes(b)) && (x.needs || []).every((n) => tp.uses.includes(n)));
+      if (tw.length) twist = pick(r2, tw).id;
+    }
+    let fin = null;
+    if (!tp.fin) { const fs = M.finales.filter((f) => (f.needs || []).every((n) => tp.uses.includes(n))); fin = pick(r2, fs).id; }
+    return { seed: seed >>> 0, tpl: tp.id, c: tp.c, st: tp.st, slots, twist, fin, min: Math.max(STARS[tp.st].min, tp.min || 0) };
   }
-  const partsOf = (run) => ({ role: byId(P.roles, run.role), task: byId(P.tasks, run.task), restr: byId(P.restrictions, run.restr), seal: byId(P.seals, run.seal) });
-  function rollPersonal(diff, cat) {
-    let c; for (let i = 0; i < 40; i++) { c = generate(randSeed(), diff, cat); if (!S.recent.includes(c.task) && !S.recent.includes(c.role)) break; } return c;
+  function fill(s, m) {
+    const Vv = M.vars, sl = m.slots, en = L.code === "en";
+    const car = Vv.car[sl.car], col = Vv.color[sl.color], pl = Vv.place[sl.place];
+    const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+    const map = { car: en ? car.en : car.ru, carOn: en ? car.en : car.on, color: en ? col.en : col.ru, colorPl: en ? col.en : col.pl,
+      colorNom: en ? cap(col.en) : col.nom, placeTo: tx(pl.to), placeAt: tx(pl.at), time: tx(Vv.time[sl.time]), prop: tx(Vv.prop[sl.prop]), n: Vv.n[sl.n] };
+    return s.replace(/\{(\w+)\}/g, (x, k) => (map[k] !== undefined ? map[k] : x));
   }
+  function mtext(m) {
+    const tp = tplOf(m);
+    return { tp, title: fill(tx(tp.title), m), intro: tp.intro.map((x) => fill(tx(x), m)), steps: tp.steps.map((x) => fill(tx(x), m)),
+      fin: tp.fin ? fill(tx(tp.fin), m) : tx(M.finales.find((f) => f.id === m.fin)), twist: m.twist ? tx(M.twists.find((x) => x.id === m.twist)) : null };
+  }
+  const reward = (m) => STARS[m.st].pts + (m.src === "daily" ? DAILY_BONUS : 0);
+  const cName = (c) => tx(M.contacts[c].name);
+  const cRole = (c) => tx(M.contacts[c].role);
+  function cLine(c, kind, seed) { const arr = (M.lines[c] && M.lines[c][kind]) || []; return arr.length ? tx(arr[(seed >>> 0) % arr.length]) : ""; }
   const dailySeed = (day) => hash32("daily-" + day);
-  const reward = (run) => DIFF[run.diff].pts + (run.src === "daily" ? DAILY_BONUS : 0);
+  const dailyMission = () => Object.assign(generate(dailySeed(dayKey()), { noUnk: true, minStars: 3 }), { src: "daily" });
+  function rollFor(opt) { let m; for (let i = 0; i < 12; i++) { m = generate(randSeed(), Object.assign({ avoid: S.recent }, opt)); if (!S.recent.includes(m.tpl)) break; } return m; }
 
-  // ---------- ранги, значки ----------
+  // ---------- ранги, отношения, награды ----------
   function rankOf(p) {
     let i = 0; RANK_AT.forEach((a, k) => { if (p >= a) i = k; });
-    const cur = { at: RANK_AT[i], name: rankName(i) };
-    const next = i + 1 < RANK_AT.length ? { at: RANK_AT[i + 1], name: rankName(i + 1) } : null;
+    const cur = { at: RANK_AT[i], name: t("rank." + i) }, next = i + 1 < RANK_AT.length ? { at: RANK_AT[i + 1], name: t("rank." + (i + 1)) } : null;
     return { i, cur, next, pct: next ? Math.round(((p - cur.at) / (next.at - cur.at)) * 100) : 100 };
   }
-  function giveBadge(id) { if (S.badges[id]) return null; S.badges[id] = dayKey(); return byId(BADGES, id); }
-  function rerollsLeftToday() { if (S.rerollDay !== dayKey()) { S.rerollDay = dayKey(); S.rerollsUsed = 0; } return Math.max(0, CFG.FREE_REROLLS_PER_DAY - S.rerollsUsed); }
+  const relLevel = (c) => REL_AT.filter((x) => (S.rel[c] || 0) >= x).length;
+  const hearts = (c) => `<span class="hearts">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= relLevel(c) ? "on" : ""}"></i>`).join("")}</span>`;
+  const bName = (b) => t("badge." + b.id), bHint = (b) => t("badge." + b.id + ".hint");
+  function giveBadge(id) { if (S.badges[id]) return null; S.badges[id] = dayKey(); return BADGES.find((b) => b.id === id); }
+  function rerollsLeft() { if (S.rerollDay !== dayKey()) { S.rerollDay = dayKey(); S.rerollsUsed = 0; } return Math.max(0, MAX_REROLLS - S.rerollsUsed); }
+
+  // ---------- аватарки ----------
+  function avatar(c, size = 48) {
+    const col = M.contacts[c].color, letter = c === "unk" ? "?" : cName(c).replace(/^(Капитан|Коуч|Captain|Coach)\s+/, "")[0];
+    return `<span class="av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px;background:linear-gradient(135deg,${col[0]},${col[1]})">${esc(letter)}</span>`;
+  }
 
   // ---------- дуэль ----------
-  const duelLink = (run) => `https://t.me/${CFG.BOT_USERNAME}/${CFG.APP_SHORT_NAME}?startapp=d_${seedCode(run.seed)}_${run.diff}${run.cat && run.cat !== "any" ? "_" + run.cat : ""}`;
+  const duelLink = (m) => `https://t.me/${CFG.BOT_USERNAME}/${CFG.APP_SHORT_NAME}?startapp=d_${seedCode(m.seed)}_${tplIndex(m.tpl).toString(36)}`;
   function readStartParam() {
     let sp = inTelegram && tg.initDataUnsafe ? tg.initDataUnsafe.start_param : null;
     if (!sp) { const q = new URLSearchParams(location.search); sp = q.get("tgWebAppStartParam") || q.get("startapp"); }
-    const m = sp && /^d_([0-9A-Z]{1,7})_([123])(?:_([a-z]{3,8}))?$/.exec(sp);
-    return m ? { seed: codeSeed(m[1]), diff: +m[2], cat: m[3] && CATS.some((c) => c[0] === m[3]) ? m[3] : "any" } : null;
+    const m = sp && /^d_([0-9A-Z]{1,7})_([0-9a-z]{1,3})$/.exec(sp);
+    if (!m) return null;
+    const tp = M.templates[parseInt(m[2], 36)];
+    return tp ? { seed: codeSeed(m[1]), tpl: tp.id } : null;
   }
-  async function shareRun(run, prefix) {
-    const p = partsOf(run), link = duelLink(run), D = DIFF[run.diff];
-    const text = `${prefix}\n\n` + t("share.lines", { code: seedCode(run.seed), stars: "★".repeat(D.stars), dream: pd(p.task), role: pt(p.role), task: pt(p.task), restr: pt(p.restr), seal: pt(p.seal), min: run.min });
+  async function shareMission(m, prefixKey) {
+    const x = mtext(m), link = duelLink(m);
+    const text = t(prefixKey, { app: t("app") }) + "\n\n" + t("share.lines", { title: x.title, stars: "★".repeat(m.st), steps: x.steps.map((s, i) => `${i + 1}. ${s}`).join("\n"), fin: x.fin });
     if (inTelegram && tg.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
     else if (navigator.share) { try { await navigator.share({ text: text + "\n" + link }); } catch (e) {} }
     else { try { await navigator.clipboard.writeText(text + "\n" + link); toast(t("toast.copied")); } catch (e) { toast(link); } }
@@ -309,233 +303,250 @@
   function playerName() { const u = inTelegram && tg.initDataUnsafe && tg.initDataUnsafe.user; return u ? (u.first_name || u.username || t("player")) : t("player"); }
 
   // =========================================================
-  //  ЭКРАНЫ
+  //  НАВИГАЦИЯ
   // =========================================================
-  let view = "play", tick = null, busy = false;
+  let view = "home", viewArg = null, tick = null, busy = false;
   const screen = () => $("#screen");
-  const NAV = [["play", "dice"], ["profile", "user"], ["rules", "book"]];
-
-  function go(v) {
-    view = v; clearInterval(tick); tick = null;
-    const tab = v === "profile" || v === "rules" ? v : "play";
-    $("#nav").innerHTML = NAV.map(([k, i]) => `<button data-go="${k}" class="${k === tab ? "active" : ""}" aria-label="${t("nav." + k)}">${ic(i)}<span>${t("nav." + k)}</span></button>`).join("");
+  const NAV = [["home", "chat", "nav.chats"], ["collection", "grid", "nav.collection"], ["me", "user", "nav.me"]];
+  function go(v, arg) {
+    view = v; viewArg = arg; clearInterval(tick); tick = null;
+    const tab = v === "chat" ? null : v;
+    $("#nav").innerHTML = NAV.map(([k, i, key]) => `<button data-go="${k}" class="${k === tab ? "active" : ""}" aria-label="${t(key)}">${ic(i)}<span>${t(key)}</span></button>`).join("");
     $$("#nav button").forEach((b) => b.onclick = () => { if (busy) return; haptic(); go(b.dataset.go); });
-    $("#nav").classList.toggle("hidden", v === "onboarding" || v === "active");
-    if (inTelegram && tg.BackButton) (v === "roll" || v === "duel") ? tg.BackButton.show() : tg.BackButton.hide();
-    // миссия идёт — спрашиваем перед закрытием, чтобы не потерять таймер
+    $("#nav").classList.toggle("hidden", v === "chat" || v === "onb");
+    document.body.classList.toggle("in-chat", v === "chat" || v === "onb");
+    if (inTelegram && tg.BackButton) v === "chat" ? tg.BackButton.show() : tg.BackButton.hide();
     if (inTelegram) { try { S.active ? tg.enableClosingConfirmation() : tg.disableClosingConfirmation(); } catch (e) {} }
-    ({ play: vPlay, onboarding: vOnboarding, roll: vRoll, active: vActive, profile: vProfile, rules: vRules, duel: vDuel }[v] || vPlay)();
-    window.scrollTo(0, 0);
+    ({ home: vHome, chat: vChat, collection: vCollection, me: vMe, onb: vOnb }[v] || vHome)(arg);
+    if (v !== "chat") window.scrollTo(0, 0);
   }
 
-  const respectPill = () => `<span class="pill">${ic("medal")}${S.points}</span>`;
-
-  // ----- онбординг -----
-  function vOnboarding() {
-    screen().innerHTML = `<div class="onb">
-      <div class="scene photo"><img class="art" src="assets/hero-couple.webp?v=${V}" alt="" fetchpriority="high">
-        <div class="over"><span class="logo">${esc(t("app"))}</span><button class="pill" id="lang">${ic("globe")}${L.code.toUpperCase()}</button></div>
-        <div class="hello"><h1 class="t1">${t("onb.title")}</h1><div class="cap">${t("onb.sub")}</div></div>
-      </div>
-      <div class="card lift"><h2 class="t2">${t("onb.q")}</h2><div class="cap" style="margin-top:6px">${t("onb.qsub")}</div>
-        <div class="pf"><button class="x" data-pf="xbox"><i></i>Xbox</button><button class="p" data-pf="ps"><i></i>PlayStation</button></div>
-      </div></div>`;
-    $$("[data-pf]").forEach((b) => b.onclick = () => { S.platform = b.dataset.pf; save(); haptic("medium"); Sound.tap(); go(pendingDuel ? "duel" : "play"); });
-    $("#lang").onclick = () => langSheet(() => go("onboarding"));
+  // =========================================================
+  //  ГЛАВНАЯ — ЧАТЫ
+  // =========================================================
+  function timeLeft(m) { const ms = m.startedAt + m.min * 60e3 - Date.now(); const a = Math.abs(ms); return { ms, txt: String(Math.floor(a / 60e3)).padStart(2, "0") + ":" + String(Math.floor((a % 60e3) / 1e3)).padStart(2, "0") }; }
+  function preview(c) {
+    if (S.active && S.active.c === c) return { txt: mtext(S.active).title, hot: true };
+    if (S.pending && S.pending.c === c) return { txt: mtext(S.pending).intro[0], hot: true, unread: !S.pending.read };
+    const h = S.hist.find((x) => x.c === c);
+    if (h) { const tp = M.templates.find((x) => x.id === h.tp); return { txt: "✓ " + (tp ? fill(tx(tp.title), { slots: h.sl || { car: 0, color: 0, place: 0, time: 0, prop: 0, n: 0 } }) : "") }; }
+    return { txt: cRole(c) };
   }
-
-  // ----- главная -----
-  function slotHTML() {
-    const reel = (k, i, seal) => `<div class="reel ${seal ? "seal" : ""}" data-k="${k}"><div class="k">${ic(i)}</div><div class="win"><div class="strip"><div><small>${t("reel." + k)}</small><span class="muted">${t("reel.wait")}</span></div></div></div></div>`;
-    return `<div class="card slot" id="slot">${reel("role", "mask")}${reel("task", "target")}${reel("restr", "ban")}${reel("seal", "camera", true)}</div>`;
-  }
-  function vPlay() {
-    if (!S.platform) return go("onboarding");
-    if (S.active) return go("active");
-    if (S.pending && !S.pending.fresh) return go("roll");
-    setTod(S.diff);
-    const today = dayKey(), daily = generate(dailySeed(today), 2), dp = partsOf(daily), dailyDone = S.dailyDone === today;
-    const r = rankOf(S.points);
+  function vHome() {
+    if (!S.onb) return go("onb");
+    const tod = nowTod(), r = rankOf(S.points);
+    const day = new Intl.DateTimeFormat(L.locale, { weekday: "long" }).format(new Date());
+    const dm = dailyMission(), dx = mtext(dm), dailyDone = S.dailyDone === dayKey();
+    const known = CONTACTS.filter((c) => c !== "unk" || S.unk > 0 || (S.pending && S.pending.c === "unk") || (S.active && S.active.c === "unk"));
+    const order = known.sort((a, b) => (preview(b).hot ? 1 : 0) - (preview(a).hot ? 1 : 0));
+    let main = "";
+    if (S.active) {
+      const x = mtext(S.active), tl = timeLeft(S.active);
+      main = `<button class="hero-card active" data-open="${S.active.c}">
+        <div class="row">${avatar(S.active.c, 52)}<div class="grow"><div class="cap">${t("home.active")} · ${esc(cName(S.active.c))}</div><div class="t3">${esc(x.title)}</div></div>
+        <div class="clockpill ${tl.ms < 0 ? "over" : ""}" id="hclock">${ic("clock")}<b>${tl.txt}</b></div></div></button>`;
+    } else if (S.pending) {
+      const x = mtext(S.pending);
+      main = `<button class="hero-card new" data-open="${S.pending.c}">
+        <div class="row">${avatar(S.pending.c, 52)}<div class="grow"><div class="cap">${S.pending.read ? esc(cName(S.pending.c)) : t("home.newFrom", { name: esc(cName(S.pending.c)) })}</div>
+        <div class="bubble-prev">${esc(x.intro[0])}</div></div>${S.pending.read ? "" : '<span class="dot"></span>'}</div></button>`;
+    } else {
+      main = `<div class="hero-card spin">
+        <div class="t2">${t("home.who")}</div><div class="cap" style="margin:4px 0 12px">${t("home.whoSub")}</div>
+        <div class="moods">${MOODS.map(([k, i]) => `<button class="mood ${k === S.mood ? "on" : ""}" data-m="${k}">${ic(i)}${t("mood." + k)}</button>`).join("")}</div>
+        <button class="btn main" id="spin" style="margin-top:14px">${ic("dice")}${t("home.who")}</button></div>`;
+    }
     screen().innerHTML = `
-      <div class="scene">${sceneSVG()}
-        <div class="over"><span class="logo">${esc(t("app"))}</span>${respectPill()}</div>
-        <div class="hello"><h1 class="t1">${t("home.hello", { name: esc(playerName()) })}</h1><div class="cap">${t("slogan")}</div></div>
+      <div class="scene">${sceneSVG(todLayer(tod))}
+        <div class="over"><span class="logo">${esc(t("app"))}</span><span class="pill"><img src="${rankImg(r.i)}" alt="">${S.points}</span></div>
+        <div class="hello"><h1 class="t1 cap1">${t("home.status", { day, tod: t("tod." + tod) })}</h1><div class="cap">${S.streak ? t("streak", { n: S.streak }) + " 🔥" : t("slogan")}</div></div>
       </div>
-      <div class="card lift">
-        <div class="me"><img class="ava img" src="${rankImg(r.i)}" alt="">
-          <div style="flex:1;min-width:0"><div class="row between"><span class="name">${r.cur.name}</span><span class="cap">${S.streak ? t("streak", { n: S.streak }) : t("streak0")}</span></div>
-            <div class="bar"><div style="width:${r.pct}%"></div></div>
-            <div class="cap" style="margin-top:6px">${r.next ? t("home.toNext", { n: r.next.at - S.points, rank: r.next.name }) : t("home.top")}</div></div></div>
-      </div>
-      <div class="sec"><h2 class="t2">${t("home.wanted")}</h2></div>
-      <div class="wanted">${[1, 2, 3].map((d) => `<button class="lvl ${d === S.diff ? "on" : ""}" data-d="${d}">${stars(DIFF[d].stars)}<div><div class="t3">${dName(d)}</div><div class="cap">${t("lvl.meta", { pts: DIFF[d].pts, min: DIFF[d].min })}</div></div></button>`).join("")}</div>
-      <div class="sec"><h2 class="t2">${t("home.mood")}</h2></div>
-      <div class="moods">${[["any", "dice"], ...CATS].map(([c, i]) => `<button class="mood ${c === S.cat ? "on" : ""}" data-c="${c}">${c === "any" ? ic(i) : `<img class="mthumb" src="${catImg(c)}" alt="">`}${t("cat." + c)}</button>`).join("")}</div>
-      <div class="sec"><h2 class="t2">${t("home.random")}</h2><span class="cap" id="todcap">${t("tod." + S.diff)}</span></div>
-      ${slotHTML()}
-      <div style="margin-top:14px"><button class="btn main" id="spin">${ic("dice")}${t("home.spin")}</button></div>
-      <div class="sec"><h2 class="t2">${t("home.daily")}</h2><span class="cap">${t("home.dailyAll")}</span></div>
-      <div class="daily">
-        <svg class="palm" viewBox="0 0 120 160">${palm(20, 170, .9, false, "#fff")}</svg>
-        <div class="cap">${stars(3)} &nbsp;${t("respect", { n: DIFF[2].pts + DAILY_BONUS })}</div>
-        <div class="cap">${t("mission.dream")}: ${esc(pd(dp.task))}</div>
-        <div class="t2">${esc(pt(dp.task))}</div>
-        <div class="cap">${esc(pt(dp.restr))}</div>
-        <button class="btn" id="daily" ${dailyDone ? "disabled" : ""}>${dailyDone ? ic("check") + t("home.dailyDone") : t("home.dailyTake")}</button>
-      </div>
-      ${CFG.ONLINE_ENABLED ? "" : `<div class="card soon" style="margin-top:14px"><div class="ic">${ic("globe")}</div><div>${t("home.online")}</div></div>`}`;
-
-    $$("[data-d]").forEach((b) => b.onclick = () => {
-      if (busy) return; S.diff = +b.dataset.d; save(); haptic("tick"); Sound.tap();
-      $$("[data-d]").forEach((x) => x.classList.toggle("on", x === b)); setTod(S.diff); $("#todcap").textContent = t("tod." + S.diff);
-    });
-    $$("[data-c]").forEach((b) => b.onclick = () => {
-      if (busy) return; S.cat = b.dataset.c; save(); haptic("tick"); Sound.tap();
-      $$("[data-c]").forEach((x) => x.classList.toggle("on", x === b));
-    });
-    const mo = $(".mood.on"); if (mo) mo.scrollIntoView({ block: "nearest", inline: "center" });
-    $("#spin").onclick = () => startSpin(Object.assign(rollPersonal(S.diff, S.cat), { src: "solo", freeReroll: true }));
-    if (!dailyDone) $("#daily").onclick = () => { setTod(2); startSpin(Object.assign(daily, { src: "daily", freeReroll: false })); };
-    if (S.pending && S.pending.fresh) startSpin(S.pending, true);
+      <div class="lift">${main}</div>
+      ${!dailyDone && !S.active && !S.pending ? `<button class="daily-card" id="daily">
+        <img src="${catImg(dx.tp.cat)}" alt=""><div class="dc-body"><div class="cap">${t("home.daily")} · ${t("home.dailySub", { n: reward(dm) })}</div>
+        <div class="t3">${esc(dx.title)}</div><div class="row" style="gap:6px;margin-top:6px">${avatar(dm.c, 22)}<span class="cap">${esc(cName(dm.c))}</span>${stars(dm.st)}</div></div></button>` : ""}
+      <div class="sec"><h2 class="t2">${t("home.contacts")}</h2></div>
+      <div class="card list contacts">${order.map((c) => { const p = preview(c);
+        return `<button class="li contact" data-open="${c}">${avatar(c, 50)}<div class="grow"><div class="row between"><b>${esc(cName(c))}</b>${hearts(c)}</div>
+          <span class="prev ${p.hot ? "hot" : ""}">${esc(p.txt)}</span></div>${p.unread ? '<span class="dot"></span>' : ""}</button>`; }).join("")}</div>
+      ${CFG.ONLINE_ENABLED ? "" : `<p class="legal">${t("home.online")}</p>`}`;
+    $$("[data-open]").forEach((b) => b.onclick = () => { haptic(); go("chat", b.dataset.open); });
+    $$("[data-m]").forEach((b) => b.onclick = () => { S.mood = b.dataset.m; save(); haptic("tick"); Sound.tap(); $$("[data-m]").forEach((x) => x.classList.toggle("on", x === b)); });
+    const sp = $("#spin"); if (sp) sp.onclick = () => spin();
+    const dl = $("#daily"); if (dl) dl.onclick = () => { S.pending = Object.assign(dailyMission(), { read: false }); save(); go("chat", S.pending.c); };
+    if (S.active) tick = setInterval(() => { const el = $("#hclock b"); if (!el) return; const tl = timeLeft(S.active); el.textContent = tl.txt; $("#hclock").classList.toggle("over", tl.ms < 0); }, 1000);
   }
 
-  async function spinReels(run) {
-    const slot = $("#slot"); if (!slot) return;
-    const p = partsOf(run);
-    const data = { role: [P.roles, p.role], task: [P.tasks.filter((x) => !x.online), p.task], restr: [P.restrictions, p.restr], seal: [P.seals, p.seal] };
-    Sound.spin(); haptic("medium");
-    await Promise.all($$(".reel", slot).map((reel, i) => new Promise((res) => {
-      const [pool, fin] = data[reel.dataset.k], lbl = t("reel." + reel.dataset.k), strip = $(".strip", reel), n = 14 + i * 6, items = [];
-      for (let k = 0; k < n; k++) items.push(pool[Math.floor(Math.random() * pool.length)]);
-      items.push(fin);
-      strip.innerHTML = items.map((x) => `<div><small>${lbl}</small><span>${esc(pt(x))}</span></div>`).join("");
-      strip.style.transition = "none"; strip.style.transform = "translateY(0)"; void strip.offsetHeight;
-      const dur = 900 + i * 450;
-      strip.style.transition = `transform ${dur}ms cubic-bezier(.15,.65,.2,1)`; strip.style.transform = `translateY(${-n * 64}px)`;
-      let el = 0, step = 45; const clicks = () => { if (el > dur - 140) return; Sound.tick(); if (i === 0) haptic("tick"); el += step; step *= 1.1; setTimeout(clicks, step); };
-      setTimeout(clicks, 30);
-      setTimeout(() => { reel.classList.add("done"); Sound.stop(); haptic(i === 3 ? "heavy" : "light"); res(); }, dur);
-    })));
-    await wait(450);
-  }
-  async function startSpin(run, already) {
+  // «Кто свободен?» — перебор аватарок, остановка на контакте
+  async function spin(opt) {
     if (busy) return; busy = true;
-    run.fresh = true; S.pending = run; save();
-    $("#slot").scrollIntoView({ behavior: "smooth", block: "center" });
-    $$("#spin, .lvl, .mood, #daily").forEach((b) => b.disabled = true);
-    await wait(already ? 400 : 280);
-    await spinReels(run);
-    run.fresh = false; run.justRolled = true; save(); busy = false; go("roll");
+    const m = Object.assign(rollFor(opt || { mood: S.mood }), { src: "solo", read: false });
+    const ov = $("#overlay"); ov.className = "overlay dim spinov";
+    ov.innerHTML = `<div class="ring-av" id="ra"></div><div class="t2" id="rn" style="color:#fff;margin-top:18px">&nbsp;</div><div class="cap" id="rs" style="color:rgba(255,255,255,.7)">${t("typing")}</div>`;
+    const seq = CONTACTS.filter((c) => c !== "unk");
+    let i = 0, step = 60;
+    while (step < 260) {
+      const c = seq[i++ % seq.length];
+      $("#ra").innerHTML = avatar(c, 140); $("#rn").textContent = cName(c);
+      Sound.tick(); haptic("tick"); await wait(step); step *= 1.16;
+    }
+    $("#ra").innerHTML = avatar(m.c, 140); $("#ra").classList.add("landed"); $("#rn").textContent = cName(m.c);
+    $("#rs").textContent = t("home.newFrom", { name: cName(m.c) });
+    Sound.msg(); haptic("heavy");
+    S.pending = m; S.recent.push(m.tpl); save();
+    await wait(800);
+    ov.className = "overlay hidden"; busy = false;
+    go("chat", m.c);
   }
 
-  // ----- карточка миссии -----
-  function missionHead(run, inner) {
-    const p = partsOf(run), D = DIFF[run.diff];
-    return `<div class="mission ${run.justRolled ? "enter" : ""} ${p.task.cat ? "photo" : ""}">${p.task.cat ? `<img class="art" src="${catImg(p.task.cat)}" alt="">` : sceneSVG("art", run.diff)}
-      <div class="no">${t("mission.no", { src: t("src." + run.src), code: seedCode(run.seed) })} · ${stars(D.stars)}</div>
-      <div class="role"><div class="ic">${ic("mask")}</div><div><div class="cap">${t("mission.role")}</div><div class="t3">${esc(pt(p.role))}</div></div></div>
-      ${p.task.d ? `<div class="dream">${ic(catIcon(p.task.cat))}<span>${t("mission.dream")}: ${esc(pd(p.task))}</span></div>` : ""}
-      ${inner}</div>`;
+  // =========================================================
+  //  ЧАТ С КОНТАКТОМ
+  // =========================================================
+  const bubble = (from, html, cls = "") => `<div class="b ${from} ${cls}">${html}</div>`;
+  function missionCard(m, active) {
+    const x = mtext(m), done = (active && m.steps) || [];
+    return `<div class="b them card-b"><div class="mcard">
+      <img class="mimg" src="${catImg(x.tp.cat)}" alt="">
+      <div class="mbody">
+        <div class="row between">${stars(m.st)}<span class="cap">#${seedCode(m.seed)}</span></div>
+        <h3 class="mtitle">${esc(x.title)}</h3>
+        <ol class="steps">${x.steps.map((s, i) => `<li class="${done[i] ? "ok" : ""}" ${active ? `data-step="${i}"` : ""}><span class="ck">${ic("check")}</span><span>${esc(s)}</span></li>`).join("")}</ol>
+        ${x.twist ? `<div class="mline">${ic("ban")}<span><b>${t("card.twist")}:</b> ${esc(x.twist)}</span></div>` : ""}
+        <div class="mline">${ic("camera")}<span><b>${t("card.fin")}:</b> ${esc(x.fin)}</span></div>
+        <div class="chips"><span class="chip">${ic("clock")}${t("chip.min", { n: m.min })}</span><span class="chip">${ic("medal")}${t("respect", { n: reward(m) })}</span></div>
+      </div></div></div>`;
   }
-  function factsHTML(run, withTask) {
-    const p = partsOf(run);
-    return `<div class="facts">
-      ${withTask ? `<div class="fact"><div class="ic">${ic("target")}</div><div><div class="cap">${t("f.task")}</div><b>${esc(pt(p.task))}</b></div></div>` : ""}
-      <div class="fact"><div class="ic">${ic("ban")}</div><div><div class="cap">${t("f.restr")}</div><b>${esc(pt(p.restr))}</b></div></div>
-      <div class="fact hl"><div class="ic">${ic("camera")}</div><div><div class="cap">${t("f.seal")}</div><b>${esc(pt(p.seal))}</b></div></div>
-    </div>`;
+  function preBubbles(m) { // реплики перед миссией (вопрос игрока, «давай жёстче» и т. п.)
+    return (m.pre || []).map(([who, key, seed]) => who === "me" ? bubble("me", esc(t(key))) : bubble("them", esc(cLine(m.c, key, seed)))).join("");
   }
-  function vRoll() {
-    const run = S.pending; if (!run) return go("play");
-    setTod(run.diff);
-    const canFree = run.src === "solo" && run.freeReroll, left = rerollsLeftToday(), canReroll = run.src === "solo" && (canFree || left > 0);
+  function vChat(c) {
+    if (!M.contacts[c]) return go("home");
+    const mine = (x) => x && x.c === c;
+    const pend = mine(S.pending) ? S.pending : null, act = mine(S.active) ? S.active : null;
+    const past = S.hist.filter((h) => h.c === c).slice(0, 5).reverse();
     screen().innerHTML = `
-      ${missionHead(run, `<h1 class="t1">${esc(pt(partsOf(run).task))}</h1>`)}
-      <div class="card lift">${factsHTML(run, false)}
-        <div class="chips"><span class="chip">${ic("clock")}${t("chip.min", { n: run.min })}</span><span class="chip">${ic("medal")}${t("respect", { n: reward(run) })}</span><span class="chip">${ic("star")}${dName(run.diff)}</span></div>
+      <div class="chead"><button class="hbtn" id="cback" aria-label="${t("btn.back")}">${ic("back")}</button>${avatar(c, 40)}
+        <div class="grow"><b>${esc(cName(c))}</b><span class="cap" id="cstat">${esc(cRole(c))}</span></div>${act ? `<div class="clockpill" id="cclock">${ic("clock")}<b>--:--</b></div>` : hearts(c)}</div>
+      <div class="cbody" id="cbody">
+        ${past.map((h) => { const tp = M.templates.find((x) => x.id === h.tp); return tp ? `<div class="b sys">✓ ${esc(fill(tx(tp.title), { slots: h.sl || { car: 0, color: 0, place: 0, time: 0, prop: 0, n: 0 } }))} · ${t("respect", { n: h.pts })} · ${fmtDate(h.d)}</div>` : ""; }).join("")}
+        <div id="thread"></div>
       </div>
-      <div style="margin-top:18px"><button class="btn main" id="accept">${t("btn.start")}</button></div>
-      <div class="links">
-        ${run.src === "solo" ? `<button class="link" id="reroll" ${canReroll ? "" : "disabled"}>${ic("shuffle")}${canFree ? t("btn.reroll") : t("btn.rerollLeft", { n: left })}</button>` : ""}
-        <button class="link" id="duel">${ic("send")}${t("btn.duel")}</button>
-        <button class="link" id="cancel">${t("btn.cancel")}</button>
-      </div>`;
-    if (run.justRolled) { run.justRolled = false; save(); }
-    $("#accept").onclick = () => { run.startedAt = Date.now(); S.active = run; S.pending = null; save(); haptic("medium"); Sound.tap(); go("active"); };
-    const rr = $("#reroll");
-    if (rr) rr.onclick = () => {
-      if (!canReroll) return toast(t("toast.noRerolls"));
-      if (canFree) run.freeReroll = false; else S.rerollsUsed++;
-      S.pending = Object.assign(rollPersonal(run.diff, run.cat), { src: "solo", freeReroll: false, fresh: true }); save(); go("play");
-    };
-    $("#duel").onclick = () => shareRun(run, t("share.duel", { app: t("app") }));
-    $("#cancel").onclick = () => { S.pending = null; save(); go("play"); };
+      <div class="cbar" id="cbar"></div>`;
+    $("#cback").onclick = () => { if (!busy) go("home"); };
+    renderThread(c, pend, act);
   }
-
-  // ----- миссия идёт -----
-  function vActive() {
-    const run = S.active; if (!run) return go("play");
-    setTod(run.diff);
-    const R = 96, C = 2 * Math.PI * R;
-    screen().innerHTML = `
-      ${missionHead(run, `<div class="ring" id="ring" style="margin-top:22px"><svg viewBox="0 0 220 220"><circle class="track" cx="110" cy="110" r="${R}" fill="none" stroke-width="12"/>
-        <circle class="prog" id="prog" cx="110" cy="110" r="${R}" fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg>
-        <div class="in"><b id="digits">--:--</b><span id="cnote">${t("active.left")}</span></div></div>`)}
-      <div class="card lift">${factsHTML(run, true)}</div>
-      <div class="card soon" style="margin-top:12px"><div class="ic">${ic("camera")}</div><div>${t("active.clip")}</div></div>
-      <div style="margin-top:18px"><button class="btn main" id="done">${ic("check")}${t("btn.done")}</button></div>
-      <div class="links"><button class="link" id="share">${ic("send")}${t("btn.duel")}</button><button class="link" id="fail">${ic("flag")}${t("btn.giveup")}</button></div>`;
-    const total = run.min * 60e3, end = run.startedAt + total;
-    const upd = () => {
-      const ms = end - Date.now(), dg = $("#digits"); if (!dg) return;
-      const a = Math.abs(ms), m = Math.floor(a / 60e3), s = Math.floor((a % 60e3) / 1e3);
-      dg.textContent = (ms < 0 ? "+" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
-      $("#prog").style.strokeDashoffset = C * (1 - Math.max(0, ms) / total);
-      $("#ring").classList.toggle("over", ms < 0);
-      $("#cnote").textContent = ms < 0 ? t("active.late") : t("active.left");
+  async function renderThread(c, pend, act) {
+    const th = $("#thread"), bar = $("#cbar");
+    const m = act || pend;
+    if (!m) {
+      const tease = S.hist.find((h) => h.c === c) ? cLine(c, "tease", S.done) : "";
+      th.innerHTML = (tease ? bubble("them", esc(tease)) : "") + `<div class="b sys">${t("chat.empty")}</div>`;
+      bar.innerHTML = `<button class="btn main" id="ask">${ic("send")}${t("rep.ask")}</button>`;
+      $("#ask").onclick = () => {
+        if (S.active || S.pending) { toast(t("chat.busy")); return; }
+        S.pending = Object.assign(rollFor({ contact: c }), { src: "solo", read: false, pre: [["me", "u.ask"]] }); save();
+        Sound.sent(); renderThread(c, S.pending, null);
+      };
+      scrollChat(); return;
+    }
+    const x = mtext(m);
+    const duelSys = m.src === "duel" ? `<div class="b sys">${t("duel.line")}</div>` : m.src === "daily" ? `<div class="b sys">${t("home.daily")}</div>` : "";
+    const items = [duelSys, preBubbles(m), ...x.intro.map((s) => bubble("them", esc(s))), missionCard(m, !!act)];
+    if (act) items.push(bubble("me", esc(t("u.go"))), bubble("them", esc(cLine(c, "accept", m.seed))), `<div class="b sys tip">${ic("camera")} ${t("card.clip")}</div>`);
+    bar.innerHTML = "";
+    if (pend && !pend.read) {
+      // «печатает…» — сообщения приходят по одному
+      busy = true; th.innerHTML = "";
+      for (const it of items) {
+        if (!it) continue;
+        if (it.includes('class="b them')) { $("#cstat").textContent = t("typing"); th.insertAdjacentHTML("beforeend", `<div class="b them typing"><i></i><i></i><i></i></div>`); scrollChat(); await wait(it.includes("card-b") ? 700 : 550 + Math.min(900, it.length * 6)); $(".typing", th) && $(".typing", th).remove(); }
+        th.insertAdjacentHTML("beforeend", it.replace('class="b ', 'class="b pop ')); Sound.msg(); haptic("light"); scrollChat(); await wait(120);
+      }
+      $("#cstat").textContent = cRole(c); pend.read = true; save(); busy = false;
+    } else th.innerHTML = items.join("");
+    scrollChat();
+    if (act) bindActive(c, act); else bindPending(c, pend);
+  }
+  function scrollChat() { const b = $("#cbody"); if (b) requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" })); }
+  function bindPending(c, m) {
+    const solo = m.src === "solo", left = rerollsLeft();
+    $("#cbar").innerHTML = `<div class="replies">
+      <button class="rep main" id="rgo">${t("rep.go")}</button>
+      ${solo && m.st < 6 ? `<button class="rep" id="rhard">${t("rep.harder")}</button>` : ""}
+      ${solo ? `<button class="rep" id="rother" ${left ? "" : "disabled"}>${t("rep.other")}</button>` : ""}
+      <button class="rep ghost" id="rlater">${t("rep.later")}</button></div>`;
+    $("#rgo").onclick = () => {
+      S.active = Object.assign({}, m, { startedAt: Date.now(), steps: m.steps && m.steps.length ? m.steps : [] }); S.pending = null; save();
+      Sound.sent(); haptic("medium");
+      if (inTelegram) { try { tg.enableClosingConfirmation(); } catch (e) {} }
+      vChat(c);
     };
+    const h = $("#rhard"); if (h) h.onclick = () => {
+      const nm = Object.assign(rollFor({ contact: c, minStars: m.st === 1 ? 3 : 6 }), { src: "solo", read: false, pre: [["me", "u.harder"], ["them", "harder", randSeed()]] });
+      S.pending = nm; save(); Sound.sent(); vChat(nm.c);
+    };
+    const o = $("#rother"); if (o) o.onclick = () => {
+      if (!rerollsLeft()) return toast(t("toast.noRerolls"));
+      S.rerollsUsed++;
+      const nm = Object.assign(rollFor({ contact: c, avoid: [m.tpl, ...S.recent] }), { src: "solo", read: false, pre: [["me", "u.other"]] });
+      S.pending = nm; S.recent.push(nm.tpl); save(); Sound.sent(); vChat(c);
+    };
+    $("#rlater").onclick = () => { S.pending = null; save(); go("home"); };
+  }
+  function bindActive(c, m) {
+    $("#cbar").innerHTML = `<button class="btn main" id="done">${ic("check")}${t("btn.done")}</button>
+      <div class="links"><button class="link" id="share">${ic("send")}${t("btn.duel")}</button><button class="link" id="fail">${ic("flag")}${t("btn.giveup")}</button></div>`;
+    $$("[data-step]").forEach((li) => li.onclick = () => {
+      const i = +li.dataset.step; S.active.steps = S.active.steps || []; S.active.steps[i] = !S.active.steps[i]; save();
+      li.classList.toggle("ok", !!S.active.steps[i]); haptic(S.active.steps[i] ? "medium" : "tick"); if (S.active.steps[i]) Sound.tap();
+    });
+    const upd = () => { const el = $("#cclock"); if (!el) return; const tl = timeLeft(S.active); $("b", el).textContent = (tl.ms < 0 ? "+" : "") + tl.txt; el.classList.toggle("over", tl.ms < 0); };
     upd(); tick = setInterval(upd, 1000);
     $("#done").onclick = async () => { if (await confirmBox(t("confirm.done"))) complete(); };
-    $("#share").onclick = () => shareRun(run, t("share.doing", { app: t("app") }));
+    $("#share").onclick = () => shareMission(m, "share.duel");
     $("#fail").onclick = async () => {
       if (!(await confirmBox(t("confirm.fail")))) return;
+      const line = cLine(c, "fail", m.seed);
       S.failed++; S.active = null; save(); clearInterval(tick); busy = true;
       const ov = $("#overlay"); ov.className = "overlay wasted";
-      ov.innerHTML = `<div class="big slam">${t("wasted.title")}</div><div class="resp-sub" style="margin-top:14px;opacity:.7">${t("wasted.sub")}</div>`;
+      ov.innerHTML = `<div class="big slam">${t("wasted.title")}</div><div class="said">${avatar(c, 36)}<span>${esc(line)}</span></div>`;
       Sound.wasted(); haptic("error");
-      await wait(2200); ov.className = "overlay hidden"; busy = false; go("play");
+      await wait(2400); ov.className = "overlay hidden"; busy = false; go("chat", c);
     };
   }
 
+  // ---------- выполнение ----------
   function complete() {
-    const run = S.active, late = Date.now() > run.startedAt + run.min * 60e3;
-    let pts = reward(run); if (late) pts = Math.ceil(pts / 2);
-    const before = rankOf(S.points).i, today = dayKey(), prevPts = S.points;
-    S.points += pts; S.done++; if (run.diff === 3) S.hard++;
+    const m = S.active, x = mtext(m), late = Date.now() > m.startedAt + m.min * 60e3;
+    let pts = reward(m); if (late) pts = Math.ceil(pts / 2);
+    const before = rankOf(S.points).i, today = dayKey(), prevRel = relLevel(m.c);
+    S.points += pts; S.done++; if (m.st === 6) S.hard++;
+    S.rel[m.c] = (S.rel[m.c] || 0) + 1;
+    if (!S.played.includes(m.tpl)) S.played.push(m.tpl);
     if (S.lastDay !== today) { S.streak = S.lastDay === prevDay(today) ? S.streak + 1 : 1; S.lastDay = today; S.bestStreak = Math.max(S.bestStreak, S.streak); }
-    if (run.src === "daily") { S.dailyDone = today; S.dailyCount++; }
-    S.recent.push(run.task, run.role);
-    S.hist.unshift({ d: today, c: seedCode(run.seed), task: run.task, pts, diff: run.diff });
-    const newDream = !S.dreams.includes(run.task);
-    if (newDream) S.dreams.push(run.task);
-    const catDone = CATS.some(([c]) => P.tasks.filter((x) => !x.online && x.cat === c).every((x) => S.dreams.includes(x.id)));
-    const nb = [], tryB = (c, id) => { if (c) { const b = giveBadge(id); if (b) nb.push(b); } };
-    tryB(S.dreams.length >= 10, "dream10"); tryB(catDone, "catfull");
+    if (m.src === "daily") { S.dailyDone = today; S.dailyCount++; }
+    let story = null;
+    if (x.tp.mood === "unk" && S.unk < M.unkStory.length) { story = tx(M.unkStory[S.unk]); S.unk++; }
+    S.hist.unshift({ d: today, c: m.c, tp: m.tpl, pts, st: m.st, sl: m.slots });
+    const nb = [], tryB = (cond, id) => { if (cond) { const b = giveBadge(id); if (b) nb.push(b); } };
     tryB(true, "first"); tryB(today < SEASON1_END, "season1"); tryB(S.streak >= 3, "streak3"); tryB(S.streak >= 7, "streak7");
-    tryB(S.hard >= 10, "hard10"); tryB(S.dailyCount >= 5, "daily5"); tryB(S.done >= 10, "ten"); tryB(run.src === "duel", "duelwin");
-    S.active = null; save();
+    tryB(S.hard >= 10, "hard10"); tryB(S.dailyCount >= 5, "daily5"); tryB(S.done >= 10, "ten"); tryB(m.src === "duel", "duelwin");
+    tryB(x.tp.mood === "unk", "unk1"); tryB(CONTACTS.filter((k) => k !== "unk").every((k) => (S.rel[k] || 0) > 0), "allc");
+    const done = m; S.active = null; save();
+    if (inTelegram) { try { tg.disableClosingConfirmation(); } catch (e) {} }
     const after = rankOf(S.points);
-    passed(run, pts, late, prevPts, after.i > before ? after : null, nb, newDream);
+    passed(done, pts, late, after.i > before ? after : null, nb, story, relLevel(done.c) > prevRel);
   }
-
-  async function passed(run, pts, late, prevPts, rankUp, nb, newDream) {
+  async function passed(m, pts, late, rankUp, nb, story, relUp) {
     clearInterval(tick); busy = true;
     const ov = $("#overlay"); ov.className = "overlay passed";
     ov.innerHTML = `<div class="big slam">${t("passed.title")}</div>
-      <div class="burst">${Array.from({ length: DIFF[run.diff].stars }, (_, i) => `<svg viewBox="0 0 24 24" style="animation-delay:${0.45 + i * 0.12}s"><path d="${STAR}"/></svg>`).join("")}</div>
+      <div class="burst">${Array.from({ length: Math.min(m.st, 6) }, (_, i) => `<svg viewBox="0 0 24 24" style="animation-delay:${0.45 + i * 0.1}s"><path d="${STAR}"/></svg>`).join("")}</div>
       <div class="resp" id="resp">${t("respect", { n: 0 })}</div>
       <div class="resp-sub">${late ? t("passed.late") + " · " : ""}${t("streak", { n: S.streak })}</div>
-      <div class="awards">${newDream ? `<div class="award came" style="animation-delay:.9s"><div class="ic">${ic("heart")}</div><div><b>${t("dream.came")}</b><span>${esc(pd(partsOf(run).task))} · ${t("profile.dreamsOf", { a: S.dreams.length, b: dreamTotal() })}</span></div></div>` : ""}${nb.map((b, i) => `<div class="award" style="animation-delay:${1.1 + i * 0.12}s"><div class="ic">${ic(b.ic)}</div><div><b>${t("award.new", { name: bName(b) })}</b><span>${bHint(b)}</span></div></div>`).join("")}</div>
+      <div class="said pop" style="animation-delay:.9s">${avatar(m.c, 36)}<span>${esc(cLine(m.c, "win", m.seed))}${relUp ? " ❤️" : ""}</span></div>
+      ${story ? `<div class="said unk pop" style="animation-delay:1.1s">${avatar("unk", 36)}<span>${esc(story)}</span></div>` : ""}
+      <div class="awards">${nb.map((b, i) => `<div class="award" style="animation-delay:${1.2 + i * 0.12}s"><div class="ic">${ic(b.ic)}</div><div><b>${t("award.new", { name: bName(b) })}</b><span>${bHint(b)}</span></div></div>`).join("")}</div>
       <div class="actions hidden" id="acts"><button class="btn light" id="poster">${ic("image")}${t("btn.poster")}</button>
         <button class="btn ghost" id="duel">${ic("send")}${t("btn.duel")}</button><button class="btn text" id="next" style="color:#fff">${t("btn.next")}</button></div>`;
     Sound.passed(); haptic("heavy"); setTimeout(() => haptic("ok"), 400);
@@ -543,9 +554,9 @@
     const el = $("#resp"), t0 = performance.now();
     await new Promise((res) => { const f = (ts) => { const k = Math.min(1, (ts - t0) / 800); el.textContent = t("respect", { n: Math.round(pts * (1 - Math.pow(1 - k, 3))) }); k < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
     $("#acts").classList.remove("hidden"); busy = false;
-    $("#poster").onclick = () => showPoster(run);
-    $("#duel").onclick = () => shareRun(run, t("share.done", { app: t("app") }));
-    $("#next").onclick = () => { if (rankUp) showRankUp(rankUp); else { ov.className = "overlay hidden"; go("play"); } };
+    $("#poster").onclick = () => showPoster(m);
+    $("#duel").onclick = () => shareMission(m, "share.done");
+    $("#next").onclick = () => { if (rankUp) showRankUp(rankUp); else { ov.className = "overlay hidden"; go("home"); } };
   }
   function showRankUp(r) {
     const ov = $("#overlay"); ov.className = "overlay dim rankup";
@@ -553,7 +564,7 @@
       <div class="resp-sub" style="opacity:.7;margin-top:8px">${r.next ? t("rankup.next", { rank: r.next.name, n: r.next.at }) : t("rankup.top")}</div>
       <div class="actions"><button class="btn sun" id="ok">${t("btn.cool")}</button></div>`;
     Sound.passed(); haptic("ok"); confetti();
-    $("#ok").onclick = () => { ov.className = "overlay hidden"; go("play"); };
+    $("#ok").onclick = () => { ov.className = "overlay hidden"; go("home"); };
   }
   function confetti() {
     const c = document.createElement("canvas"); c.className = "confetti"; const dpr = window.devicePixelRatio || 1;
@@ -561,196 +572,214 @@
     const x = c.getContext("2d"), cols = ["#FF4D8D", "#FF8A4C", "#FFC24B", "#12B5A6", "#5B2BE0", "#fff"];
     const ps = Array.from({ length: 150 }, () => ({ x: c.width / 2, y: c.height * .38, vx: (Math.random() - .5) * 26 * dpr, vy: (-Math.random() * 26 - 6) * dpr, s: (Math.random() * 8 + 6) * dpr, r: Math.random() * 6, vr: (Math.random() - .5) * .4, col: cols[Math.floor(Math.random() * cols.length)] }));
     const t0 = performance.now();
-    const f = (t) => { x.clearRect(0, 0, c.width, c.height); ps.forEach((p) => { p.vy += .8 * dpr; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; x.save(); x.translate(p.x, p.y); x.rotate(p.r); x.fillStyle = p.col; x.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); x.restore(); }); t - t0 < 2600 ? requestAnimationFrame(f) : c.remove(); };
+    const f = (ts) => { x.clearRect(0, 0, c.width, c.height); ps.forEach((p) => { p.vy += .8 * dpr; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; x.save(); x.translate(p.x, p.y); x.rotate(p.r); x.fillStyle = p.col; x.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); x.restore(); }); ts - t0 < 2600 ? requestAnimationFrame(f) : c.remove(); };
     requestAnimationFrame(f);
   }
 
-  // ----- дуэль -----
-  let pendingDuel = null;
-  function vDuel() {
-    const d = pendingDuel; pendingDuel = null; if (!d) return go("play");
-    if (S.active) { toast(t("toast.finishFirst")); return go("active"); }
-    setTod(d.diff);
-    screen().innerHTML = `
-      <div class="scene">${sceneSVG()}<div class="over"><span class="logo">${esc(t("app"))}</span>${respectPill()}</div>
-        <div class="hello"><h1 class="t1">${t("duel.title")}</h1><div class="cap">${t("duel.sub")}</div></div></div>
-      <div class="lift" style="position:relative">${slotHTML()}</div>
-      <div style="margin-top:14px"><button class="btn main" id="see">${ic("dice")}${t("duel.open")}</button></div>`;
-    $("#see").onclick = async () => {
-      if (busy) return; busy = true; $("#see").disabled = true;
-      const run = Object.assign(generate(d.seed, d.diff, d.cat), { src: "duel", freeReroll: false }); S.pending = run; save();
-      await spinReels(run); run.justRolled = true; save(); busy = false; go("roll");
-    };
+  // =========================================================
+  //  ОНБОРДИНГ — переписка с Лео
+  // =========================================================
+  async function vOnb() {
+    screen().innerHTML = `<div class="onb">
+      <div class="scene photo tall"><img class="art" src="assets/hero-couple.webp?v=${V}" alt="" fetchpriority="high">
+        <div class="over"><span class="logo">${esc(t("app"))}</span><button class="pill" id="lang">${ic("globe")}${L.code.toUpperCase()}</button></div>
+        <div class="hello"><h1 class="t1">${t("onb.hero")}</h1><div class="cap">${t("onb.sub")}</div></div></div>
+      <div style="padding:18px 0"><button class="btn main" id="start">${t("onb.start")}</button></div></div>`;
+    $("#lang").onclick = () => langSheet(() => go("onb"));
+    $("#start").onclick = () => onbChat();
+  }
+  async function onbChat() {
+    busy = true;
+    screen().innerHTML = `<div class="chead">${avatar("leo", 40)}<div class="grow"><b>${esc(cName("leo"))}</b><span class="cap" id="cstat">${esc(cRole("leo"))}</span></div></div>
+      <div class="cbody" id="cbody"><div id="thread"></div></div><div class="cbar" id="cbar"></div>`;
+    const th = $("#thread");
+    const say = async (txt) => { $("#cstat").textContent = t("typing"); th.insertAdjacentHTML("beforeend", `<div class="b them typing"><i></i><i></i><i></i></div>`); scrollChat(); await wait(500 + Math.min(800, txt.length * 12)); $(".typing", th).remove(); th.insertAdjacentHTML("beforeend", bubble("them pop", esc(txt))); Sound.msg(); haptic("light"); $("#cstat").textContent = cRole("leo"); scrollChat(); await wait(150); };
+    const ask = (opts) => new Promise((res) => {
+      $("#cbar").innerHTML = `<div class="replies">${opts.map(([k, label]) => `<button class="rep" data-k="${k}">${label}</button>`).join("")}</div>`;
+      $$("#cbar [data-k]").forEach((b) => b.onclick = () => { $("#cbar").innerHTML = ""; th.insertAdjacentHTML("beforeend", bubble("me pop", esc(b.textContent))); Sound.sent(); haptic("tick"); scrollChat(); res(b.dataset.k); });
+    });
+    await say(t("onb.1")); await say(t("onb.2")); await say(t("onb.3"));
+    S.platform = await ask([["xbox", "Xbox"], ["ps", "PlayStation"]]);
+    await say(t("onb.4"));
+    S.mood = await ask([["hard", "🔥 " + t("mood.hard")], ["fun", "😂 " + t("mood.fun")], ["chill", "🌴 " + t("mood.chill")], ["any", "🎲 " + t("mood.any")]]);
+    await say(t("onb.5"));
+    S.onb = true; save(); busy = false;
+    await wait(500);
+    if (pendingDuel) return go("chat", startDuel());
+    spin({ mood: S.mood, maxStars: 3, noUnk: true });
+  }
+  function startDuel() {
+    const d = pendingDuel; pendingDuel = null;
+    if (S.active) { toast(t("chat.busy")); return S.active.c; }
+    S.pending = Object.assign(generate(d.seed, { tpl: d.tpl }), { src: "duel", read: false }); save();
+    return S.pending.c;
   }
 
-  // ----- профиль -----
-  function vProfile() {
-    if (!S.platform) return go("onboarding");
-    setTod(S.diff);
+  // =========================================================
+  //  СЮЖЕТЫ (коллекция)
+  // =========================================================
+  function vCollection() {
+    const total = M.templates.length;
+    const groups = ["hard", "fun", "chill", "unk"];
+    const dsl = { car: 0, color: 0, place: 0, time: 0, prop: 0, n: 0 };
+    screen().innerHTML = `
+      <div style="padding-top:calc(24px + env(safe-area-inset-top))"><h1 class="t1">${t("col.title")}</h1><div class="cap" style="margin-top:6px">${t("col.sub", { a: S.played.length, b: total })}</div>
+        <div class="bar" style="margin-top:10px"><div style="width:${Math.round(S.played.length / total * 100)}%"></div></div></div>
+      ${groups.map((g) => { const list = M.templates.filter((x) => x.mood === g); const got = list.filter((x) => S.played.includes(x.id)).length;
+        return `<div class="sec"><h2 class="t2">${g === "unk" ? esc(cName("unk")) : t("mood." + g)}</h2><span class="cap">${got}/${list.length}</span></div>
+        <div class="cgrid">${list.map((x) => { const ok = S.played.includes(x.id); const hidden = g === "unk" && !ok;
+          return `<div class="ctile ${ok ? "ok" : ""}"><img src="${catImg(x.cat)}" alt=""><div class="ct"><b>${hidden ? "???" : esc(fill(tx(x.title), { slots: dsl }))}</b>
+          <span>${ok ? ic("check") : ""}${stars(x.st)}</span></div></div>`; }).join("")}</div>`; }).join("")}`;
+  }
+
+  // =========================================================
+  //  Я (профиль)
+  // =========================================================
+  function vMe() {
     const r = rankOf(S.points);
     screen().innerHTML = `
       <div class="prof-top"><img class="ava img" src="${rankImg(r.i)}" alt=""><h1 class="t1">${esc(playerName())}</h1>
-        <div class="cap">${t("profile.line", { rank: r.cur.name, n: S.points, pf: S.platform === "ps" ? "PlayStation" : "Xbox" })}</div></div>
+        <div class="cap">${t("me.line", { rank: r.cur.name, n: S.points, pf: S.platform === "ps" ? "PlayStation" : "Xbox" })}</div></div>
       <div class="card lift">
-        <div class="ranks">${RANK_AT.map((x, i) => `<div class="${i <= r.i ? "on" : ""} ${i === r.i ? "now" : ""}"><img src="${rankImg(i)}" alt="">${rankName(i)}</div>`).join("")}</div>
+        <div class="ranks">${RANK_AT.map((_, i) => `<div class="${i <= r.i ? "on" : ""} ${i === r.i ? "now" : ""}"><img src="${rankImg(i)}" alt="">${t("rank." + i)}</div>`).join("")}</div>
         <div class="bar" style="margin-top:14px"><div style="width:${r.pct}%"></div></div>
+        <div class="cap" style="margin-top:6px">${r.next ? t("toNext", { n: r.next.at - S.points, rank: r.next.name }) : t("top")}</div>
         <div class="kpis"><div class="kpi"><b>${S.done}</b><span>${t("kpi.missions")}</span></div><div class="kpi"><b>${S.bestStreak}</b><span>${t("kpi.best")}</span></div><div class="kpi"><b>${S.hard}</b><span>${t("kpi.hard")}</span></div></div>
       </div>
-      <div style="margin-top:14px"><button class="btn" id="poster">${ic("image")}${t("btn.myPoster")}</button></div>
-      <div class="sec"><h2 class="t2">${t("profile.dreams")}</h2><span class="cap">${t("profile.dreamsOf", { a: S.dreams.length, b: dreamTotal() })}</span></div>
-      <div class="card list">${CATS.map(([c, i]) => { const all = P.tasks.filter((x) => !x.online && x.cat === c), done = all.filter((x) => S.dreams.includes(x.id)).length;
-        return `<button class="li catrow" data-cat="${c}"><img class="thumb" src="${catImg(c)}" alt=""><div class="grow"><b>${t("cat." + c)}</b><div class="bar"><div style="width:${Math.round(done / all.length * 100)}%"></div></div></div><span class="cap">${done}/${all.length}</span>${ic("chevron")}</button>`; }).join("")}</div>
-      <div class="sec"><h2 class="t2">${t("profile.awards")}</h2><span class="cap">${t("profile.awardsOf", { a: Object.keys(S.badges).length, b: BADGES.length })}</span></div>
+      <div style="margin-top:14px"><button class="btn" id="poster">${ic("image")}${t("btn.poster")}</button></div>
+      <div class="sec"><h2 class="t2">${t("me.contacts")}</h2></div>
+      <div class="card list">${CONTACTS.filter((c) => c !== "unk" || S.unk > 0).map((c) => `<button class="li contact" data-open="${c}">${avatar(c, 44)}<div class="grow"><b>${esc(cName(c))}</b><span class="prev">${t("missions", { n: S.rel[c] || 0 })}</span></div>${hearts(c)}</button>`).join("")}</div>
+      ${S.unk ? `<div class="sec"><h2 class="t2">${t("me.unk")}</h2><span class="cap">${S.unk}/${M.unkStory.length}</span></div>
+        <div class="card story">${M.unkStory.slice(0, S.unk).map((s) => `<p>${esc(tx(s))}</p>`).join("")}</div>` : ""}
+      <div class="sec"><h2 class="t2">${t("me.awards")}</h2><span class="cap">${t("me.awardsOf", { a: Object.keys(S.badges).length, b: BADGES.length })}</span></div>
       <div class="medals">${BADGES.map((b) => `<button class="medal ${S.badges[b.id] ? "" : "locked"}" data-b="${b.id}"><div class="ic">${ic(S.badges[b.id] ? b.ic : "lock")}</div><span>${bName(b)}</span></button>`).join("")}</div>
-      <div class="sec"><h2 class="t2">${t("profile.history")}</h2></div>
-      <div class="card list">${S.hist.length ? S.hist.map((h) => `<div class="li"><div class="grow"><b>${esc(h.task ? pt(byId(P.tasks, h.task) || { id: h.task, t: h.t }) : h.t)}</b><span class="cap">#${esc(h.c || "—")} · ${fmtDate(h.d)}</span></div><span class="plus">+${h.pts}</span></div>`).join("") : `<div class="li"><div class="grow muted">${t("profile.historyEmpty")}</div></div>`}</div>
-      <div class="sec"><h2 class="t2">${t("profile.rating")}</h2><span class="cap">${t("profile.soon")}</span></div>
-      <div class="card soon"><div class="ic">${ic("trophy")}</div><div>${t("profile.ratingText")}</div></div>
-      <div class="sec"><h2 class="t2">${t("profile.settings")}</h2></div>
+      <div class="sec"><h2 class="t2">${t("me.settings")}</h2></div>
       <div class="card" style="padding:4px 18px">
-        <button class="set" id="lng">${ic("globe")}<span class="grow">${t("profile.language")}</span><span class="muted">${L.name}</span>${ic("chevron")}</button>
-        <button class="set" id="snd">${ic("volume")}<span class="grow">${t("profile.sound")}</span><span class="tgl ${S.sound ? "on" : ""}"></span></button>
-        <button class="set" id="pf">${ic("gamepad")}<span class="grow">${t("profile.platform")}</span><span class="muted">${S.platform === "ps" ? "PlayStation" : "Xbox"}</span>${ic("chevron")}</button>
-      </div>`;
-    $$("[data-b]").forEach((el) => el.onclick = () => { const b = byId(BADGES, el.dataset.b); toast(S.badges[b.id] ? t("toast.badgeGot", { name: bName(b), date: fmtDate(S.badges[b.id]) }) : bHint(b)); });
-    $("#lng").onclick = () => langSheet(() => go("profile"));
-    $$("[data-cat]").forEach((b) => b.onclick = () => dreamSheet(b.dataset.cat));
+        <button class="set" id="lng">${ic("globe")}<span class="grow">${t("me.language")}</span><span class="muted">${L.name}</span>${ic("chevron")}</button>
+        <button class="set" id="snd">${ic("volume")}<span class="grow">${t("me.sound")}</span><span class="tgl ${S.sound ? "on" : ""}"></span></button>
+        <button class="set" id="pf">${ic("gamepad")}<span class="grow">${t("me.platform")}</span><span class="muted">${S.platform === "ps" ? "PlayStation" : "Xbox"}</span>${ic("chevron")}</button>
+      </div>
+      <div class="sec"><h2 class="t2">${t("me.how")}</h2></div>
+      <div class="card how">${[1, 2, 3, 4, 5].map((i) => `<p>${t("how." + i)}</p>`).join("")}</div>
+      <p class="legal">${t("legal")}</p>`;
+    $$("[data-open]").forEach((b) => b.onclick = () => go("chat", b.dataset.open));
+    $$("[data-b]").forEach((el) => el.onclick = () => { const b = BADGES.find((x) => x.id === el.dataset.b); toast(S.badges[b.id] ? t("toast.badgeGot", { name: bName(b), date: fmtDate(S.badges[b.id]) }) : bHint(b)); });
     $("#poster").onclick = () => showPoster(null);
-    $("#snd").onclick = () => { S.sound = !S.sound; save(); vProfile(); if (S.sound) Sound.tap(); };
-    $("#pf").onclick = () => { S.platform = S.platform === "ps" ? "xbox" : "ps"; save(); vProfile(); };
+    $("#lng").onclick = () => langSheet(() => go("me"));
+    $("#snd").onclick = () => { S.sound = !S.sound; save(); vMe(); if (S.sound) Sound.tap(); };
+    $("#pf").onclick = () => { S.platform = S.platform === "ps" ? "xbox" : "ps"; save(); vMe(); };
+  }
+  function langSheet(after) {
+    const ov = $("#overlay"); ov.className = "overlay dim";
+    ov.innerHTML = `<h2 class="t2" style="color:#fff">${t("me.language")}</h2><div class="actions">${Object.values(LANGS).map((l) => `<button class="btn ${l.code === L.code ? "sun" : "ghost"}" data-l="${l.code}">${l.name}</button>`).join("")}</div>`;
+    $$("[data-l]", ov).forEach((b) => b.onclick = () => { S.lang = b.dataset.l; save(); setLang(S.lang); haptic("tick"); ov.className = "overlay hidden"; after(); });
   }
 
-  // ----- правила -----
-  function vRules() {
-    const st = (i, t, p) => `<div class="step"><div class="ic">${ic(i)}</div><div><div class="t3">${t}</div><p>${p}</p></div></div>`;
-    screen().innerHTML = `
-      <div style="padding-top:calc(24px + env(safe-area-inset-top))"><h1 class="t1">${t("rules.title")}</h1><div class="cap" style="margin-top:6px">${t("rules.sub")}</div></div>
-      <div class="card" style="margin-top:18px;padding:4px 18px">
-        ${st("dice", t("rules.1.t"), t("rules.1.p"))}
-        ${st("target", t("rules.2.t"), t("rules.2.p"))}
-        ${st("camera", t("rules.3.t"), t("rules.3.p"))}
-        ${st("medal", t("rules.4.t"), RANK_AT.map((x, i) => rankName(i)).join(" → "))}
-        ${st("fire", t("rules.5.t"), t("rules.5.p"))}
-        ${st("send", t("rules.6.t"), t("rules.6.p"))}
-        ${st("heart", t("rules.7.t"), t("rules.7.p"))}
-      </div>
-      <div class="sec"><h2 class="t2">${t("rules.soon")}</h2></div>
-      <div class="card" style="padding:4px 18px">
-        ${st("trophy", t("rules.s1.t"), t("rules.s1.p"))}
-        ${st("globe", t("rules.s2.t"), t("rules.s2.p"))}
-        ${st("star", t("rules.s3.t"), t("rules.s3.p", { date: fmtDate(SEASON1_END) }))}
-      </div>
-      <p class="legal">${t("rules.legal")}</p>`;
-  }
-
-  // ---------- постер 1080×1920 ----------
-  function wrap(ctx, text, x, y, maxW, lh) { const w = text.split(" "); let line = ""; for (const s of w) { const t = line ? line + " " + s : s; if (ctx.measureText(t).width > maxW && line) { ctx.fillText(line, x, y); line = s; y += lh; } else line = t; } ctx.fillText(line, x, y); return y + lh; }
+  // ---------- постер-скриншот переписки (1080×1920) ----------
+  function wrapLines(ctx, text, maxW) { const w = String(text).split(" "); const out = []; let line = ""; for (const s of w) { const tt = line ? line + " " + s : s; if (ctx.measureText(tt).width > maxW && line) { out.push(line); line = s; } else line = tt; } if (line) out.push(line); return out; }
   function rr(x, X, Y, w, h, r) { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r); x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath(); }
-  async function showPoster(run) {
+  async function showPoster(m) {
     try { await document.fonts.ready; } catch (e) {}
     const W = 1080, H = 1920, c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
-    const tod = run ? run.diff : S.diff;
-    const img = new Image();
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(sceneSVG("art", tod).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="810" '));
-    try { await img.decode(); x.drawImage(img, 0, 0, W, 810); } catch (e) {}
-    const bg = x.createLinearGradient(0, 760, 0, H); bg.addColorStop(0, tod === 3 ? "#130B21" : "#FFF5EF"); bg.addColorStop(1, tod === 3 ? "#0B0620" : "#FFE9DD");
-    x.fillStyle = bg; x.fillRect(0, 760, W, H - 760);
-    const dark = tod === 3, txt = dark ? "#F7EEFF" : "#1D1033", mut = dark ? "#A898C2" : "#7A6B8F", card = dark ? "#1F1533" : "#FFFFFF";
-    x.fillStyle = "#fff"; x.font = "800 52px Unbounded"; x.textAlign = "left"; x.fillText(t("app"), 72, 130);
-    x.font = "800 96px Unbounded"; x.shadowColor = "rgba(0,0,0,.3)"; x.shadowBlur = 30;
-    if (run) { const [l1, l2] = t("poster.passed").split("|"); x.fillText(l1, 72, 560); x.fillText(l2 || "", 72, 670); } else { x.fillText(rankOf(S.points).cur.name.toUpperCase(), 72, 640); }
-    x.shadowBlur = 0;
-    x.fillStyle = card; rr(x, 56, 720, W - 112, 1010, 56); x.fill();
-    let y = 820; x.textAlign = "left";
-    const field = (lbl, val, big) => { x.fillStyle = mut; x.font = "700 30px Manrope"; x.fillText(lbl, 112, y); y += 58; x.fillStyle = txt; x.font = big ? "700 50px Unbounded" : "700 40px Manrope"; y = wrap(x, val, 112, y, W - 224, big ? 64 : 54) + 30; };
-    if (run) {
-      const p = partsOf(run);
-      x.fillStyle = mut; x.font = "700 30px Manrope"; x.fillText(`${t("poster.no", { code: seedCode(run.seed) })}   ${"★".repeat(DIFF[run.diff].stars)}`, 112, y); y += 90;
-      field(t("poster.dream"), pd(p.task)); field(t("poster.task"), pt(p.task), true); field(t("poster.role"), pt(p.role)); field(t("poster.restr"), pt(p.restr)); field(t("poster.seal"), pt(p.seal));
+    const bg = x.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#5B2BE0"); bg.addColorStop(.45, "#FF4D8D"); bg.addColorStop(.8, "#FF8A4C"); bg.addColorStop(1, "#FFC24B");
+    x.fillStyle = bg; x.fillRect(0, 0, W, H);
+    x.fillStyle = "rgba(255,255,255,.9)"; x.font = "800 50px Unbounded"; x.textAlign = "center"; x.fillText(t("app"), W / 2, 130);
+    if (m) {
+      // считаем высоту блока переписки, чтобы поставить его по центру
+      const measure = () => { let h = 0; x.font = "600 38px Manrope"; mtext(m).intro.slice(0, 2).forEach((s) => { h += wrapLines(x, s, 760).length * 50 + 44 + 22; });
+        x.font = "800 50px Unbounded"; const tl0 = wrapLines(x, mtext(m).title, 820).length; x.font = "600 34px Manrope";
+        h += 90 + tl0 * 62 + mtext(m).steps.reduce((a2, s, i) => a2 + wrapLines(x, `${i + 1}. ${s}`, 820).length * 46 + 10, 0) + 40 + 30 + 190;
+        x.font = "700 38px Manrope"; h += wrapLines(x, cLine(m.c, "win", m.seed), 760).length * 50 + 44; return h + 130 + 60; };
+      const off = Math.max(0, Math.floor((1680 - 190 - measure()) / 2));
+      x.save(); x.translate(0, off);
+      const tx_ = mtext(m), col = M.contacts[m.c].color;
+      // шапка чата
+      x.fillStyle = "rgba(255,255,255,.18)"; rr(x, 60, 190, W - 120, 130, 40); x.fill();
+      const g = x.createLinearGradient(90, 205, 190, 305); g.addColorStop(0, col[0]); g.addColorStop(1, col[1]);
+      x.fillStyle = g; x.beginPath(); x.arc(150, 255, 48, 0, Math.PI * 2); x.fill();
+      x.fillStyle = "#fff"; x.font = "800 44px Unbounded"; x.fillText(m.c === "unk" ? "?" : cName(m.c).replace(/^(Капитан|Коуч|Captain|Coach)\s+/, "")[0], 150, 271);
+      x.textAlign = "left"; x.font = "800 40px Manrope"; x.fillText(cName(m.c), 225, 248); x.font = "600 30px Manrope"; x.fillStyle = "rgba(255,255,255,.8)"; x.fillText(cRole(m.c), 225, 290);
+      let y = 380;
+      const bubbleL = (txt) => { x.font = "600 38px Manrope"; const lines = wrapLines(x, txt, 760); const h = lines.length * 50 + 44; x.fillStyle = "#fff"; rr(x, 60, y, 820, h, 34); x.fill(); x.fillStyle = "#1D1033"; lines.forEach((l, i) => x.fillText(l, 92, y + 62 + i * 50)); y += h + 22; };
+      tx_.intro.slice(0, 2).forEach(bubbleL);
+      // карточка миссии
+      x.font = "800 50px Unbounded"; const tl = wrapLines(x, tx_.title, 820);
+      x.font = "600 34px Manrope"; const st = tx_.steps.map((s, i) => wrapLines(x, `${i + 1}. ${s}`, 820));
+      const ch = 90 + tl.length * 62 + st.reduce((a, l) => a + l.length * 46 + 10, 0) + 40;
+      x.fillStyle = "rgba(29,16,51,.85)"; rr(x, 60, y, W - 120, ch, 40); x.fill();
+      x.fillStyle = "#FFD36B"; x.font = "700 34px Manrope"; x.fillText("★".repeat(m.st), 100, y + 62);
+      x.fillStyle = "#fff"; x.font = "800 50px Unbounded"; tl.forEach((l, i) => x.fillText(l, 100, y + 130 + i * 62));
+      let yy = y + 130 + tl.length * 62; x.font = "600 34px Manrope"; x.fillStyle = "rgba(255,255,255,.88)";
+      st.forEach((ls) => { ls.forEach((l) => { x.fillText(l, 100, yy); yy += 46; }); yy += 10; });
+      y += ch + 30;
+      // штамп
+      x.save(); x.translate(W / 2, y + 70); x.rotate(-0.05); x.strokeStyle = "#fff"; x.lineWidth = 8; rr(x, -400, -70, 800, 140, 26); x.stroke();
+      x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 56px Unbounded"; x.fillText(t("poster.passed"), 0, 20); x.restore();
+      y += 190; x.textAlign = "left";
+      // ответ контакта
+      const win = cLine(m.c, "win", m.seed); x.font = "700 38px Manrope"; const wl = wrapLines(x, win, 760); const wh = wl.length * 50 + 44;
+      x.fillStyle = "#fff"; rr(x, 60, y, 820, wh, 34); x.fill(); x.fillStyle = "#1D1033"; wl.forEach((l, i) => x.fillText(l, 92, y + 62 + i * 50));
+      x.restore();
     } else {
       const r = rankOf(S.points);
-      field(t("poster.rank"), r.cur.name, true); field(t("poster.respect"), String(S.points)); field(t("poster.done"), String(S.done)); field(t("poster.best"), t("days", { n: S.bestStreak }));
+      x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 90px Unbounded"; x.fillText(r.cur.name, W / 2, 760);
+      x.font = "700 46px Manrope"; x.fillText(`${S.points} · ${t("kpi.missions")}: ${S.done} · 🔥 ${S.bestStreak}`, W / 2, 860);
+      try { const im = new Image(); im.src = rankImg(r.i); await im.decode(); x.save(); x.beginPath(); x.arc(W / 2, 470, 190, 0, Math.PI * 2); x.clip(); x.drawImage(im, W / 2 - 190, 280, 380, 380); x.restore(); } catch (e) {}
     }
-    const gr = x.createLinearGradient(56, 0, W - 56, 0); gr.addColorStop(0, "#FF4D8D"); gr.addColorStop(.55, "#FF8A4C"); gr.addColorStop(1, "#FFC24B");
-    x.fillStyle = gr; rr(x, 56, 1770, W - 112, 110, 55); x.fill();
-    x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 38px Unbounded"; x.fillText(run ? t("poster.can") : t("poster.catch"), W / 2, 1822);
-    x.font = "700 28px Manrope"; x.fillText(`t.me/${CFG.BOT_USERNAME}`, W / 2, 1862);
+    x.textAlign = "center"; x.fillStyle = "#fff"; rr(x, 140, 1720, W - 280, 120, 60); x.fill();
+    x.fillStyle = "#1D1033"; x.font = "800 40px Unbounded"; x.fillText(m ? t("poster.can") : t("poster.catch"), W / 2, 1778);
+    x.font = "700 28px Manrope"; x.fillText(`t.me/${CFG.BOT_USERNAME}`, W / 2, 1818);
     const url = c.toDataURL("image/png"), ov = $("#overlay"); ov.className = "overlay dim";
     ov.innerHTML = `<img src="${url}" alt=""><div class="resp-sub" style="opacity:.7;margin-top:12px">${t("poster.hold")}</div>
       <div class="actions"><button class="btn sun" id="ovShare">${ic("send")}${t("btn.share")}</button><button class="btn ghost" id="ovClose">${t("btn.close")}</button></div>`;
-    $("#ovClose").onclick = () => { ov.className = "overlay hidden"; if (run) go("play"); };
+    $("#ovClose").onclick = () => { ov.className = "overlay hidden"; if (m) go("home"); };
     $("#ovShare").onclick = async () => {
       try { const blob = await (await fetch(url)).blob(), file = new File([blob], "random-city.png", { type: "image/png" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; } } catch (e) {}
-      if (run) shareRun(run, t("share.done", { app: t("app") })); else toast(t("poster.hold"));
+      if (m) shareMission(m, "share.done"); else toast(t("poster.hold"));
     };
-  }
-
-  // ---------- список мечт ----------
-  const dreamTotal = () => P.tasks.filter((x) => !x.online).length;
-  function dreamSheet(cat) {
-    const ov = $("#overlay"); ov.className = "overlay dim";
-    const all = P.tasks.filter((x) => !x.online && x.cat === cat).sort((x, y) => x.lvl - y.lvl);
-    ov.innerHTML = `<div class="sheet"><img class="banner" src="${catImg(cat)}" alt=""><div class="row" style="gap:12px"><div><h2 class="t2">${t("cat." + cat)}</h2><div class="cap">${t("dreams.hint")}</div></div></div>
-      <div class="dlist">${all.map((x) => { const ok = S.dreams.includes(x.id); return `<div class="dl ${ok ? "ok" : ""}">${ic(ok ? "check" : "circle")}<div class="grow"><b>${esc(pd(x))}</b><span>${esc(pt(x))}</span></div>${stars(DIFF[x.lvl].stars)}</div>`; }).join("")}</div></div>
-      <div class="actions"><button class="btn ghost" id="ovClose">${t("btn.close")}</button></div>`;
-    $("#ovClose").onclick = () => { ov.className = "overlay hidden"; };
-  }
-
-  // ---------- выбор языка ----------
-  function langSheet(after) {
-    const ov = $("#overlay"); ov.className = "overlay dim";
-    ov.innerHTML = `<h2 class="t2" style="color:#fff">${t("profile.language")}</h2>
-      <div class="actions">${Object.values(LANGS).map((l) => `<button class="btn ${l.code === L.code ? "sun" : "ghost"}" data-l="${l.code}">${l.name}</button>`).join("")}</div>`;
-    $$("[data-l]", ov).forEach((b) => b.onclick = () => { S.lang = b.dataset.l; save(); setLang(S.lang); haptic("tick"); ov.className = "overlay hidden"; after(); });
   }
 
   // =========================================================
   //  СТАРТ
   // =========================================================
+  document.addEventListener("error", (e) => {
+    const im = e.target; if (!(im instanceof HTMLImageElement)) return;
+    if (/\.webp(\?|$)/.test(im.src)) { im.src = im.src.replace(".webp", ".jpg"); return; }
+    im.classList.add("broken");
+  }, true);
+  function preloadImages() {
+    const list = ["hero-couple.webp?v=" + V, ...["travel", "sport", "thrill", "love", "nature", "chill", "lux", "crime"].map((c) => `cats/${c}.webp?v=${V}`), ...RANK_AT.map((_, i) => `ranks/${i}.webp?v=${V}`)];
+    list.forEach((src, k) => setTimeout(() => { const im = new Image(); im.src = "assets/" + src; }, 300 + k * 60));
+  }
   function applyTheme() {
     const dark = inTelegram ? tg.colorScheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
     root.dataset.theme = dark ? "dark" : "light";
     const bg = dark ? "#130B21" : "#FFF5EF";
     if (inTelegram) { try { tg.setHeaderColor(bg); tg.setBackgroundColor(bg); } catch (e) {} }
   }
-  // картинки: если WebP не открылся — пробуем JPG, если и он нет — остаётся цветной фон
-  document.addEventListener("error", (e) => {
-    const im = e.target;
-    if (!(im instanceof HTMLImageElement)) return;
-    if (/\.webp(\?|$)/.test(im.src)) { im.src = im.src.replace(".webp", ".jpg"); return; }
-    im.classList.add("broken");
-  }, true);
-  document.addEventListener("load", (e) => { if (e.target instanceof HTMLImageElement) e.target.classList.add("ok"); }, true);
-  function preloadImages() {
-    const list = ["assets/hero-couple.webp?v=" + V, ...CATS.map(([c]) => catImg(c)), ...RANK_AT.map((_, i) => rankImg(i))];
-    list.forEach((src, k) => setTimeout(() => { const im = new Image(); im.decoding = "async"; im.src = src; }, 300 + k * 60));
-  }
-
+  let pendingDuel = null;
   async function init() {
     if (inTelegram) {
       tg.ready(); tg.expand();
-      // не закрывать приложение свайпом вниз при прокрутке (Bot API 7.7+)
       try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
       tg.onEvent && tg.onEvent("themeChanged", applyTheme);
-      if (tg.BackButton) tg.BackButton.onClick(() => { if (busy) return; S.pending = null; save(); go("play"); });
+      if (tg.BackButton) tg.BackButton.onClick(() => { if (!busy) go("home"); });
     } else window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
     applyTheme();
+    root.dataset.diff = "2";
     const local = loadLocal(); if (local) S = local;
     const cloud = await loadCloud(); if (cloud && cloud.ts > S.ts) S = cloud;
-    const valid = (r) => r && Object.values(partsOf(r)).every(Boolean);
+    const valid = (m) => m && tplOf(m);
     if (S.pending && !valid(S.pending)) S.pending = null;
     if (S.active && !valid(S.active)) S.active = null;
-    S.recent = S.recent.filter((id) => byId(P.tasks, id) || byId(P.roles, id));
-    if (!Array.isArray(S.dreams)) S.dreams = [];
-    S.hist.forEach((h) => { if (h.task && byId(P.tasks, h.task) && !S.dreams.includes(h.task)) S.dreams.push(h.task); });
-    S.dreams = S.dreams.filter((id) => byId(P.tasks, id));
-    if (S.cat !== "any" && !CATS.some((c) => c[0] === S.cat)) S.cat = "any";
     setLang(S.lang || detectLang());
     pendingDuel = readStartParam();
-    if (!S.platform) go("onboarding"); else if (pendingDuel) go("duel"); else go("play");
+    if (!S.onb) go("onb");
+    else if (pendingDuel) go("chat", startDuel());
+    else go("home");
     preloadImages();
   }
-  window.__rc = { dreamTotal, generate, partsOf, dayKey, prevDay, seedCode, codeSeed, setLang, t, get state() { return S; } };
+  window.__rc = { generate, mtext, tplOf, dayKey, seedCode, setLang, t, get state() { return S; } };
   init();
 })();

@@ -315,3 +315,112 @@ svg.i { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor;
   background-color: #C44B8A; background-image: var(--sunset); }
 img.broken { visibility: hidden; }
 .mission.photo img.art, .scene.photo img.art, .catrow img.thumb, .mood img.mthumb, .ava.img, .sheet .banner { transition: opacity .35s; }
+
+/* =================== v2: мессенджер =================== */
+.av { display: inline-grid; place-items: center; flex: none; border-radius: 50%; color: #fff; font-family: var(--f-head); font-weight: 800; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.hearts { display: inline-flex; gap: 3px; }
+.hearts i { width: 8px; height: 8px; border-radius: 50%; background: var(--card2); }
+.hearts i.on { background: #FF2E88; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: #FF2E88; flex: none; box-shadow: 0 0 0 3px var(--card); animation: pulse 1.4s infinite; }
+@keyframes pulse { 50% { transform: scale(1.25); } }
+.pill img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; margin-left: -6px; }
+.cap1::first-letter { text-transform: uppercase; }
+.grow { flex: 1; min-width: 0; }
+
+/* главная карточка */
+.hero-card { display: block; width: 100%; text-align: left; background: var(--card); border-radius: var(--r); padding: 18px; box-shadow: var(--shadow); color: var(--text); }
+.hero-card .row { gap: 14px; }
+.hero-card.new { box-shadow: 0 0 0 2px #FF2E88, var(--shadow); }
+.hero-card.active { box-shadow: 0 0 0 2px var(--a), var(--shadow); }
+.bubble-prev { margin-top: 6px; background: var(--card2); border-radius: 4px 18px 18px 18px; padding: 10px 14px; font: 600 15px/1.35 var(--f-body);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clockpill { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--a-soft); color: var(--a); font: 800 15px/1 var(--f-head); flex: none; }
+.clockpill svg.i { width: 16px; height: 16px; }
+.clockpill.over { background: rgba(228,0,43,.12); color: #E4002B; }
+.daily-card { display: flex; width: 100%; margin-top: 14px; text-align: left; background: var(--card); border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); color: var(--text); }
+.daily-card img { width: 112px; object-fit: cover; flex: none; background: var(--sunset); }
+.daily-card .dc-body { padding: 14px 16px; min-width: 0; }
+.daily-card .stars svg { width: 11px; height: 11px; }
+
+/* список контактов */
+.contacts .li, .list .contact { width: 100%; text-align: left; color: var(--text); }
+.contact .prev { display: block; font: 500 14px/1.3 var(--f-body); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+.contact .prev.hot { color: var(--text); font-weight: 700; }
+.contact b { font: 700 16px/1.2 var(--f-body); }
+
+/* экран чата */
+body.in-chat #app { padding-bottom: 0; }
+.chead { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; margin: 0 -16px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+.chead b { display: block; font: 800 16px/1.2 var(--f-body); }
+.chead .cap { font-size: 13px; }
+.hbtn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; margin-left: -8px; color: var(--text); }
+.cbody { padding: 16px 0 190px; display: flex; flex-direction: column; gap: 8px; }
+#thread { display: flex; flex-direction: column; gap: 8px; }
+.b { max-width: 84%; padding: 11px 15px; font: 600 15.5px/1.4 var(--f-body); border-radius: 20px; word-wrap: break-word; }
+.b.them { align-self: flex-start; background: var(--card); border-radius: 6px 20px 20px 20px; box-shadow: 0 2px 8px rgba(29,16,51,.06); }
+.b.me { align-self: flex-end; color: #fff; background: linear-gradient(120deg, var(--a2), var(--a)); border-radius: 20px 6px 20px 20px; }
+.b.sys { align-self: center; max-width: 92%; background: none; color: var(--muted); font: 600 13px/1.35 var(--f-body); text-align: center; padding: 4px 8px; }
+.b.sys.tip { display: flex; gap: 8px; align-items: flex-start; text-align: left; background: var(--card2); border-radius: 16px; padding: 10px 14px; }
+.b.sys.tip svg.i { width: 18px; height: 18px; color: var(--a); flex: none; }
+.b.pop { animation: bpop .32s cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes bpop { from { opacity: 0; transform: translateY(10px) scale(.96); } }
+.b.typing { display: inline-flex; gap: 5px; padding: 14px 16px; }
+.b.typing i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); animation: tdot 1s infinite; }
+.b.typing i:nth-child(2) { animation-delay: .15s; } .b.typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes tdot { 30% { transform: translateY(-5px); opacity: 1; } 0%, 60%, 100% { opacity: .4; } }
+
+/* карточка миссии в чате */
+.b.card-b { padding: 0; max-width: 92%; width: 92%; overflow: hidden; border-radius: 6px 24px 24px 24px; }
+.mcard .mimg { display: block; width: 100%; height: 132px; object-fit: cover; background: var(--sunset); }
+.mbody { padding: 14px 16px 16px; }
+.mtitle { font: 800 21px/1.15 var(--f-head); margin: 8px 0 10px; letter-spacing: -.3px; }
+.steps { list-style: none; margin: 0 0 6px; padding: 0; counter-reset: s; }
+.steps li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; font: 700 15px/1.35 var(--f-body); border-top: 1px dashed var(--line); }
+.steps li:first-child { border-top: 0; }
+.steps .ck { width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--line); display: grid; place-items: center; flex: none; color: transparent; transition: .2s; }
+.steps .ck svg.i { width: 15px; height: 15px; stroke-width: 3; }
+.steps li[data-step] { cursor: pointer; }
+.steps li[data-step] .ck { border-color: var(--a); }
+.steps li.ok .ck { background: var(--a); border-color: var(--a); color: #fff; }
+.steps li.ok > span:last-child { text-decoration: line-through; color: var(--muted); }
+.mline { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; font: 600 14px/1.35 var(--f-body); color: var(--muted); }
+.mline b { color: var(--text); }
+.mline svg.i { width: 18px; height: 18px; color: var(--a); flex: none; margin-top: 1px; }
+.mcard .chips { margin-top: 12px; }
+
+/* нижняя панель чата */
+.cbar { position: fixed; z-index: 25; left: 50%; transform: translateX(-50%); bottom: 0; width: min(480px, 100%); padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 70%, transparent); }
+.cbar:empty { display: none; }
+.replies { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.rep { min-height: 46px; padding: 0 18px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow); font: 700 15px/1 var(--f-body); color: var(--text); border: 2px solid var(--a); }
+.rep.main { color: #fff; border: 0; background: linear-gradient(120deg, var(--a2), var(--a)); flex: 1 1 100%; min-height: 56px; font-size: 17px; }
+.rep.ghost { border-color: transparent; color: var(--muted); box-shadow: none; background: none; }
+.rep:disabled { opacity: .4; }
+.rep:active { transform: scale(.97); }
+
+/* «кто свободен» */
+.spinov .ring-av { border-radius: 50%; padding: 6px; background: rgba(255,255,255,.15); }
+.spinov .ring-av.landed { animation: slam .5s cubic-bezier(.2,1.5,.4,1); box-shadow: 0 0 0 6px rgba(255,46,136,.5), 0 0 60px rgba(255,46,136,.6); }
+.said { display: flex; gap: 10px; align-items: flex-start; text-align: left; max-width: 360px; width: 100%; margin-top: 16px; background: #fff; color: #1D1033; border-radius: 6px 20px 20px 20px; padding: 10px 14px; font: 700 15px/1.35 var(--f-body); }
+.wasted .said { background: rgba(255,255,255,.12); color: #fff; }
+.said.unk { background: #1A1230; color: #fff; }
+.said.pop { animation: rise .45s both; }
+
+/* сюжеты */
+.cgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ctile { position: relative; border-radius: 20px; overflow: hidden; background: var(--card); box-shadow: var(--shadow); }
+.ctile img { display: block; width: 100%; height: 92px; object-fit: cover; background: var(--sunset); filter: grayscale(.85) brightness(.9); opacity: .55; }
+.ctile.ok img { filter: none; opacity: 1; }
+.ctile .ct { padding: 10px 12px 12px; }
+.ctile b { display: block; font: 700 14px/1.25 var(--f-body); min-height: 36px; }
+.ctile span { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.ctile span svg.i { width: 16px; height: 16px; color: var(--a); stroke-width: 3; }
+.ctile .stars svg { width: 10px; height: 10px; }
+.ctile:not(.ok) b { color: var(--muted); }
+
+.card.story p, .card.how p { margin: 0 0 10px; font: 600 15px/1.45 var(--f-body); }
+.card.story p { font-style: italic; }
+.card.story p:last-child, .card.how p:last-child { margin-bottom: 0; }
+.onb .scene.tall { height: 68vh; min-height: 420px; }
