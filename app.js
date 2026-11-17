@@ -68,6 +68,8 @@
   const SEASON1_END = "2026-12-19";
   // темы мечт: id + иконка
   const CATS = [["travel", "globe"], ["sport", "medal"], ["thrill", "zap"], ["love", "heart"], ["nature", "leaf"], ["chill", "sun"], ["lux", "diamond"], ["crime", "mask"]];
+  const catImg = (c) => `assets/cats/${c}.jpg`;
+  const rankImg = (i) => `assets/ranks/${i}.jpg`;
   const catIcon = (c) => (CATS.find((x) => x[0] === c) || [0, "star"])[1];
   const bName = (b) => t("badge." + b.id), bHint = (b) => t("badge." + b.id + ".hint");
 
@@ -356,7 +358,7 @@
         <div class="hello"><h1 class="t1">${t("home.hello", { name: esc(playerName()) })}</h1><div class="cap">${t("slogan")}</div></div>
       </div>
       <div class="card lift">
-        <div class="me"><div class="ava">${esc(playerName()[0].toUpperCase())}</div>
+        <div class="me"><img class="ava img" src="${rankImg(r.i)}" alt="">
           <div style="flex:1;min-width:0"><div class="row between"><span class="name">${r.cur.name}</span><span class="cap">${S.streak ? t("streak", { n: S.streak }) : t("streak0")}</span></div>
             <div class="bar"><div style="width:${r.pct}%"></div></div>
             <div class="cap" style="margin-top:6px">${r.next ? t("home.toNext", { n: r.next.at - S.points, rank: r.next.name }) : t("home.top")}</div></div></div>
@@ -364,7 +366,7 @@
       <div class="sec"><h2 class="t2">${t("home.wanted")}</h2></div>
       <div class="wanted">${[1, 2, 3].map((d) => `<button class="lvl ${d === S.diff ? "on" : ""}" data-d="${d}">${stars(DIFF[d].stars)}<div><div class="t3">${dName(d)}</div><div class="cap">${t("lvl.meta", { pts: DIFF[d].pts, min: DIFF[d].min })}</div></div></button>`).join("")}</div>
       <div class="sec"><h2 class="t2">${t("home.mood")}</h2></div>
-      <div class="moods">${[["any", "dice"], ...CATS].map(([c, i]) => `<button class="mood ${c === S.cat ? "on" : ""}" data-c="${c}">${ic(i)}${t("cat." + c)}</button>`).join("")}</div>
+      <div class="moods">${[["any", "dice"], ...CATS].map(([c, i]) => `<button class="mood ${c === S.cat ? "on" : ""}" data-c="${c}">${c === "any" ? ic(i) : `<img class="mthumb" src="${catImg(c)}" alt="">`}${t("cat." + c)}</button>`).join("")}</div>
       <div class="sec"><h2 class="t2">${t("home.random")}</h2><span class="cap" id="todcap">${t("tod." + S.diff)}</span></div>
       ${slotHTML()}
       <div style="margin-top:14px"><button class="btn main" id="spin">${ic("dice")}${t("home.spin")}</button></div>
@@ -425,7 +427,7 @@
   // ----- карточка миссии -----
   function missionHead(run, inner) {
     const p = partsOf(run), D = DIFF[run.diff];
-    return `<div class="mission ${run.justRolled ? "enter" : ""}">${sceneSVG("art", run.diff)}
+    return `<div class="mission ${run.justRolled ? "enter" : ""} ${p.task.cat ? "photo" : ""}">${p.task.cat ? `<img class="art" src="${catImg(p.task.cat)}" alt="">` : sceneSVG("art", run.diff)}
       <div class="no">${t("mission.no", { src: t("src." + run.src), code: seedCode(run.seed) })} · ${stars(D.stars)}</div>
       <div class="role"><div class="ic">${ic("mask")}</div><div><div class="cap">${t("mission.role")}</div><div class="t3">${esc(pt(p.role))}</div></div></div>
       ${p.task.d ? `<div class="dream">${ic(catIcon(p.task.cat))}<span>${t("mission.dream")}: ${esc(pd(p.task))}</span></div>` : ""}
@@ -543,7 +545,7 @@
   }
   function showRankUp(r) {
     const ov = $("#overlay"); ov.className = "overlay dim rankup";
-    ov.innerHTML = `<div class="badge-big slam">${ic("medal")}</div><div class="cap" style="color:rgba(255,255,255,.7);margin-top:18px">${t("rankup.new")}</div><h1 class="t1">${r.cur.name}</h1>
+    ov.innerHTML = `<div class="badge-big slam"><img src="${rankImg(r.i)}" alt=""></div><div class="cap" style="color:rgba(255,255,255,.7);margin-top:18px">${t("rankup.new")}</div><h1 class="t1">${r.cur.name}</h1>
       <div class="resp-sub" style="opacity:.7;margin-top:8px">${r.next ? t("rankup.next", { rank: r.next.name, n: r.next.at }) : t("rankup.top")}</div>
       <div class="actions"><button class="btn sun" id="ok">${t("btn.cool")}</button></div>`;
     Sound.passed(); haptic("ok"); confetti();
@@ -583,17 +585,17 @@
     setTod(S.diff);
     const r = rankOf(S.points);
     screen().innerHTML = `
-      <div class="prof-top"><div class="ava">${esc(playerName()[0].toUpperCase())}</div><h1 class="t1">${esc(playerName())}</h1>
+      <div class="prof-top"><img class="ava img" src="${rankImg(r.i)}" alt=""><h1 class="t1">${esc(playerName())}</h1>
         <div class="cap">${t("profile.line", { rank: r.cur.name, n: S.points, pf: S.platform === "ps" ? "PlayStation" : "Xbox" })}</div></div>
       <div class="card lift">
-        <div class="ranks">${RANK_AT.map((x, i) => `<div class="${i <= r.i ? "on" : ""} ${i === r.i ? "now" : ""}"><i></i>${rankName(i)}</div>`).join("")}</div>
+        <div class="ranks">${RANK_AT.map((x, i) => `<div class="${i <= r.i ? "on" : ""} ${i === r.i ? "now" : ""}"><img src="${rankImg(i)}" alt="">${rankName(i)}</div>`).join("")}</div>
         <div class="bar" style="margin-top:14px"><div style="width:${r.pct}%"></div></div>
         <div class="kpis"><div class="kpi"><b>${S.done}</b><span>${t("kpi.missions")}</span></div><div class="kpi"><b>${S.bestStreak}</b><span>${t("kpi.best")}</span></div><div class="kpi"><b>${S.hard}</b><span>${t("kpi.hard")}</span></div></div>
       </div>
       <div style="margin-top:14px"><button class="btn" id="poster">${ic("image")}${t("btn.myPoster")}</button></div>
       <div class="sec"><h2 class="t2">${t("profile.dreams")}</h2><span class="cap">${t("profile.dreamsOf", { a: S.dreams.length, b: dreamTotal() })}</span></div>
       <div class="card list">${CATS.map(([c, i]) => { const all = P.tasks.filter((x) => !x.online && x.cat === c), done = all.filter((x) => S.dreams.includes(x.id)).length;
-        return `<button class="li catrow" data-cat="${c}"><div class="ic">${ic(i)}</div><div class="grow"><b>${t("cat." + c)}</b><div class="bar"><div style="width:${Math.round(done / all.length * 100)}%"></div></div></div><span class="cap">${done}/${all.length}</span>${ic("chevron")}</button>`; }).join("")}</div>
+        return `<button class="li catrow" data-cat="${c}"><img class="thumb" src="${catImg(c)}" alt=""><div class="grow"><b>${t("cat." + c)}</b><div class="bar"><div style="width:${Math.round(done / all.length * 100)}%"></div></div></div><span class="cap">${done}/${all.length}</span>${ic("chevron")}</button>`; }).join("")}</div>
       <div class="sec"><h2 class="t2">${t("profile.awards")}</h2><span class="cap">${t("profile.awardsOf", { a: Object.keys(S.badges).length, b: BADGES.length })}</span></div>
       <div class="medals">${BADGES.map((b) => `<button class="medal ${S.badges[b.id] ? "" : "locked"}" data-b="${b.id}"><div class="ic">${ic(S.badges[b.id] ? b.ic : "lock")}</div><span>${bName(b)}</span></button>`).join("")}</div>
       <div class="sec"><h2 class="t2">${t("profile.history")}</h2></div>
@@ -685,7 +687,7 @@
   function dreamSheet(cat) {
     const ov = $("#overlay"); ov.className = "overlay dim";
     const all = P.tasks.filter((x) => !x.online && x.cat === cat).sort((x, y) => x.lvl - y.lvl);
-    ov.innerHTML = `<div class="sheet"><div class="row" style="gap:12px"><div class="ic big">${ic(catIcon(cat))}</div><div><h2 class="t2">${t("cat." + cat)}</h2><div class="cap">${t("dreams.hint")}</div></div></div>
+    ov.innerHTML = `<div class="sheet"><img class="banner" src="${catImg(cat)}" alt=""><div class="row" style="gap:12px"><div><h2 class="t2">${t("cat." + cat)}</h2><div class="cap">${t("dreams.hint")}</div></div></div>
       <div class="dlist">${all.map((x) => { const ok = S.dreams.includes(x.id); return `<div class="dl ${ok ? "ok" : ""}">${ic(ok ? "check" : "circle")}<div class="grow"><b>${esc(pd(x))}</b><span>${esc(pt(x))}</span></div>${stars(DIFF[x.lvl].stars)}</div>`; }).join("")}</div></div>
       <div class="actions"><button class="btn ghost" id="ovClose">${t("btn.close")}</button></div>`;
     $("#ovClose").onclick = () => { ov.className = "overlay hidden"; };
