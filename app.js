@@ -276,9 +276,11 @@
   function rerollsLeft() { if (S.rerollDay !== dayKey()) { S.rerollDay = dayKey(); S.rerollsUsed = 0; } return Math.max(0, MAX_REROLLS - S.rerollsUsed); }
 
   // ---------- аватарки ----------
+  const avImg = (c) => `assets/contacts/${c}.webp?v=${V}`;
+  const stickerImg = (c, kind) => `assets/stickers/${c}-${kind}.webp?v=${V}`;
   function avatar(c, size = 48) {
     const col = M.contacts[c].color, letter = c === "unk" ? "?" : cName(c).replace(/^(Капитан|Коуч|Captain|Coach)\s+/, "")[0];
-    return `<span class="av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px;background:linear-gradient(135deg,${col[0]},${col[1]})">${esc(letter)}</span>`;
+    return `<span class="av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px;background:linear-gradient(135deg,${col[0]},${col[1]})">${esc(letter)}<img src="${avImg(c)}" alt="" loading="lazy"></span>`;
   }
 
   // ---------- дуэль ----------
@@ -509,7 +511,7 @@
       const line = cLine(c, "fail", m.seed);
       S.failed++; S.active = null; save(); clearInterval(tick); busy = true;
       const ov = $("#overlay"); ov.className = "overlay wasted";
-      ov.innerHTML = `<div class="big slam">${t("wasted.title")}</div><div class="said">${avatar(c, 36)}<span>${esc(line)}</span></div>`;
+      ov.innerHTML = `<div class="big slam">${t("wasted.title")}</div><img class="sticker pop" style="animation-delay:.5s" src="${stickerImg(c, "fail")}" alt=""><div class="said">${avatar(c, 36)}<span>${esc(line)}</span></div>`;
       Sound.wasted(); haptic("error");
       await wait(2400); ov.className = "overlay hidden"; busy = false; go("chat", c);
     };
@@ -544,6 +546,7 @@
       <div class="burst">${Array.from({ length: Math.min(m.st, 6) }, (_, i) => `<svg viewBox="0 0 24 24" style="animation-delay:${0.45 + i * 0.1}s"><path d="${STAR}"/></svg>`).join("")}</div>
       <div class="resp" id="resp">${t("respect", { n: 0 })}</div>
       <div class="resp-sub">${late ? t("passed.late") + " · " : ""}${t("streak", { n: S.streak })}</div>
+      <img class="sticker pop" style="animation-delay:.8s" src="${stickerImg(m.c, "win")}" alt="">
       <div class="said pop" style="animation-delay:.9s">${avatar(m.c, 36)}<span>${esc(cLine(m.c, "win", m.seed))}${relUp ? " ❤️" : ""}</span></div>
       ${story ? `<div class="said unk pop" style="animation-delay:1.1s">${avatar("unk", 36)}<span>${esc(story)}</span></div>` : ""}
       <div class="awards">${nb.map((b, i) => `<div class="award" style="animation-delay:${1.2 + i * 0.12}s"><div class="ic">${ic(b.ic)}</div><div><b>${t("award.new", { name: bName(b) })}</b><span>${bHint(b)}</span></div></div>`).join("")}</div>
@@ -678,63 +681,77 @@
   // ---------- постер-скриншот переписки (1080×1920) ----------
   function wrapLines(ctx, text, maxW) { const w = String(text).split(" "); const out = []; let line = ""; for (const s of w) { const tt = line ? line + " " + s : s; if (ctx.measureText(tt).width > maxW && line) { out.push(line); line = s; } else line = tt; } if (line) out.push(line); return out; }
   function rr(x, X, Y, w, h, r) { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r); x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath(); }
+  function loadImg(src) {
+    return new Promise((res) => { const im = new Image(); im.onload = () => res(im);
+      im.onerror = () => { if (/\.webp/.test(im.src)) { const j = new Image(); j.onload = () => res(j); j.onerror = () => res(null); j.src = im.src.replace(".webp", ".jpg"); } else res(null); };
+      im.src = src; });
+  }
+  // Постер для сторис: рука держит телефон на закате, на экране — переписка
   async function showPoster(m) {
     try { await document.fonts.ready; } catch (e) {}
-    const W = 1080, H = 1920, c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
-    const bg = x.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#5B2BE0"); bg.addColorStop(.45, "#FF4D8D"); bg.addColorStop(.8, "#FF8A4C"); bg.addColorStop(1, "#FFC24B");
-    x.fillStyle = bg; x.fillRect(0, 0, W, H);
-    x.fillStyle = "rgba(255,255,255,.9)"; x.font = "800 50px Unbounded"; x.textAlign = "center"; x.fillText(t("app"), W / 2, 130);
+    const W = 1080, H = 1935, SC = { x: 336, y: 620, w: 408, h: 888, r: 46 }; // экран телефона на фоне
+    const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+    const bg = await loadImg(`assets/poster-phone.webp?v=${V}`);
+    if (bg) x.drawImage(bg, 0, 0, W, H); else { const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#5B2BE0"); g.addColorStop(1, "#FF8A4C"); x.fillStyle = g; x.fillRect(0, 0, W, H); }
+    // заголовок в небе
+    x.textAlign = "center"; x.shadowColor = "rgba(30,10,50,.45)"; x.shadowBlur = 24;
+    x.fillStyle = "rgba(255,255,255,.92)"; x.font = "800 40px Unbounded"; x.fillText(t("app"), W / 2, 120);
+    x.fillStyle = "#fff"; x.font = "800 78px Unbounded";
+    const head = m ? t("poster.passed").split(" ") : [rankOf(S.points).cur.name.toUpperCase()];
+    head.forEach((l, i) => x.fillText(l, W / 2, 255 + i * 92 - (head.length - 1) * 20));
+    x.fillStyle = "#FFD36B"; x.font = "700 40px Manrope"; x.fillText("★".repeat(m ? m.st : 6), W / 2, 255 + head.length * 92 - (head.length - 1) * 20 + 4);
+    x.shadowBlur = 0;
+    // экран телефона
+    x.save(); rr(x, SC.x - 4, SC.y - 4, SC.w + 8, SC.h + 8, SC.r); x.clip();
+    const dark = root.dataset.theme === "dark";
+    x.fillStyle = dark ? "#130B21" : "#FFF5EF"; x.fillRect(SC.x - 4, SC.y - 4, SC.w + 8, SC.h + 8);
+    const P = 16, X0 = SC.x + P, CW = SC.w - P * 2, txt = dark ? "#F7EEFF" : "#1D1033", mut = dark ? "#A898C2" : "#7A6B8F", card = dark ? "#1F1533" : "#FFFFFF";
+    let y = SC.y + 22;
+    const circleImg = (im, cx, cy, r) => { if (!im) return; x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.clip(); x.drawImage(im, cx - r, cy - r, r * 2, r * 2); x.restore(); };
+    x.textAlign = "left";
     if (m) {
-      // считаем высоту блока переписки, чтобы поставить его по центру
-      const measure = () => { let h = 0; x.font = "600 38px Manrope"; mtext(m).intro.slice(0, 2).forEach((s) => { h += wrapLines(x, s, 760).length * 50 + 44 + 22; });
-        x.font = "800 50px Unbounded"; const tl0 = wrapLines(x, mtext(m).title, 820).length; x.font = "600 34px Manrope";
-        h += 90 + tl0 * 62 + mtext(m).steps.reduce((a2, s, i) => a2 + wrapLines(x, `${i + 1}. ${s}`, 820).length * 46 + 10, 0) + 40 + 30 + 190;
-        x.font = "700 38px Manrope"; h += wrapLines(x, cLine(m.c, "win", m.seed), 760).length * 50 + 44; return h + 130 + 60; };
-      const off = Math.max(0, Math.floor((1680 - 190 - measure()) / 2));
-      x.save(); x.translate(0, off);
-      const tx_ = mtext(m), col = M.contacts[m.c].color;
+      const tx_ = mtext(m), [av, cat, stk] = await Promise.all([loadImg(avImg(m.c)), loadImg(catImg(tx_.tp.cat)), loadImg(stickerImg(m.c, "win"))]);
       // шапка чата
-      x.fillStyle = "rgba(255,255,255,.18)"; rr(x, 60, 190, W - 120, 130, 40); x.fill();
-      const g = x.createLinearGradient(90, 205, 190, 305); g.addColorStop(0, col[0]); g.addColorStop(1, col[1]);
-      x.fillStyle = g; x.beginPath(); x.arc(150, 255, 48, 0, Math.PI * 2); x.fill();
-      x.fillStyle = "#fff"; x.font = "800 44px Unbounded"; x.fillText(m.c === "unk" ? "?" : cName(m.c).replace(/^(Капитан|Коуч|Captain|Coach)\s+/, "")[0], 150, 271);
-      x.textAlign = "left"; x.font = "800 40px Manrope"; x.fillText(cName(m.c), 225, 248); x.font = "600 30px Manrope"; x.fillStyle = "rgba(255,255,255,.8)"; x.fillText(cRole(m.c), 225, 290);
-      let y = 380;
-      const bubbleL = (txt) => { x.font = "600 38px Manrope"; const lines = wrapLines(x, txt, 760); const h = lines.length * 50 + 44; x.fillStyle = "#fff"; rr(x, 60, y, 820, h, 34); x.fill(); x.fillStyle = "#1D1033"; lines.forEach((l, i) => x.fillText(l, 92, y + 62 + i * 50)); y += h + 22; };
-      tx_.intro.slice(0, 2).forEach(bubbleL);
+      circleImg(av, X0 + 26, y + 26, 26);
+      x.fillStyle = txt; x.font = "800 24px Manrope"; x.fillText(cName(m.c), X0 + 64, y + 22);
+      x.fillStyle = mut; x.font = "600 18px Manrope"; x.fillText(cRole(m.c), X0 + 64, y + 46); y += 72;
+      x.fillStyle = dark ? "rgba(255,255,255,.08)" : "rgba(29,16,51,.08)"; x.fillRect(SC.x, y, SC.w, 2); y += 18;
+      // сообщение контакта
+      const bub = (s, fill, color, alignRight) => { x.font = "600 21px Manrope"; const ls = wrapLines(x, s, CW - 70); const bw = Math.min(CW - 30, Math.max(...ls.map((l) => x.measureText(l).width)) + 34), bh = ls.length * 28 + 22;
+        const bx = alignRight ? X0 + CW - bw : X0; x.fillStyle = fill; rr(x, bx, y, bw, bh, 18); x.fill(); x.fillStyle = color; ls.forEach((l, i) => x.fillText(l, bx + 17, y + 33 + i * 28)); y += bh + 10; };
+      bub(tx_.intro[0], card, txt);
       // карточка миссии
-      x.font = "800 50px Unbounded"; const tl = wrapLines(x, tx_.title, 820);
-      x.font = "600 34px Manrope"; const st = tx_.steps.map((s, i) => wrapLines(x, `${i + 1}. ${s}`, 820));
-      const ch = 90 + tl.length * 62 + st.reduce((a, l) => a + l.length * 46 + 10, 0) + 40;
-      x.fillStyle = "rgba(29,16,51,.85)"; rr(x, 60, y, W - 120, ch, 40); x.fill();
-      x.fillStyle = "#FFD36B"; x.font = "700 34px Manrope"; x.fillText("★".repeat(m.st), 100, y + 62);
-      x.fillStyle = "#fff"; x.font = "800 50px Unbounded"; tl.forEach((l, i) => x.fillText(l, 100, y + 130 + i * 62));
-      let yy = y + 130 + tl.length * 62; x.font = "600 34px Manrope"; x.fillStyle = "rgba(255,255,255,.88)";
-      st.forEach((ls) => { ls.forEach((l) => { x.fillText(l, 100, yy); yy += 46; }); yy += 10; });
-      y += ch + 30;
-      // штамп
-      x.save(); x.translate(W / 2, y + 70); x.rotate(-0.05); x.strokeStyle = "#fff"; x.lineWidth = 8; rr(x, -400, -70, 800, 140, 26); x.stroke();
-      x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 56px Unbounded"; x.fillText(t("poster.passed"), 0, 20); x.restore();
-      y += 190; x.textAlign = "left";
-      // ответ контакта
-      const win = cLine(m.c, "win", m.seed); x.font = "700 38px Manrope"; const wl = wrapLines(x, win, 760); const wh = wl.length * 50 + 44;
-      x.fillStyle = "#fff"; rr(x, 60, y, 820, wh, 34); x.fill(); x.fillStyle = "#1D1033"; wl.forEach((l, i) => x.fillText(l, 92, y + 62 + i * 50));
-      x.restore();
+      x.font = "800 27px Unbounded"; const tlN = Math.min(2, wrapLines(x, tx_.title, CW - 32).length); const cardH = 182 + tlN * 36 + 14 + tx_.steps.length * 30 + 22; x.fillStyle = card; rr(x, X0, y, CW, cardH, 22); x.fill();
+      x.save(); rr(x, X0, y, CW, 150, 22); x.clip(); if (cat) x.drawImage(cat, X0, y - 20, CW, CW * cat.height / cat.width); x.restore();
+      let yy = y + 182; x.fillStyle = "#FF6A3D"; x.font = "700 20px Manrope"; x.fillText("★".repeat(m.st), X0 + 16, yy);
+      x.fillStyle = txt; x.font = "800 27px Unbounded"; wrapLines(x, tx_.title, CW - 32).slice(0, 2).forEach((l) => { yy += 36; x.fillText(l, X0 + 16, yy); });
+      x.font = "700 18px Manrope"; yy += 14;
+      tx_.steps.forEach((s) => { yy += 30; x.fillStyle = "#FF6A3D"; rr(x, X0 + 16, yy - 18, 22, 22, 6); x.fill(); x.fillStyle = "#fff"; x.font = "800 16px Manrope"; x.fillText("✓", X0 + 21, yy - 1);
+        x.fillStyle = mut; x.font = "700 18px Manrope"; x.fillText(wrapLines(x, s, CW - 70)[0], X0 + 48, yy); });
+      y += cardH + 12;
+      bub(t("u.done"), "#FF4D8D", "#fff", true);
+      bub(cLine(m.c, "win", m.seed), card, txt);
+      if (stk) x.drawImage(stk, X0 + CW - 150, Math.min(y - 20, SC.y + SC.h - 160), 140, 140);
     } else {
-      const r = rankOf(S.points);
-      x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 90px Unbounded"; x.fillText(r.cur.name, W / 2, 760);
-      x.font = "700 46px Manrope"; x.fillText(`${S.points} · ${t("kpi.missions")}: ${S.done} · 🔥 ${S.bestStreak}`, W / 2, 860);
-      try { const im = new Image(); im.src = rankImg(r.i); await im.decode(); x.save(); x.beginPath(); x.arc(W / 2, 470, 190, 0, Math.PI * 2); x.clip(); x.drawImage(im, W / 2 - 190, 280, 380, 380); x.restore(); } catch (e) {}
+      const r = rankOf(S.points), rk = await loadImg(rankImg(r.i));
+      circleImg(rk, SC.x + SC.w / 2, SC.y + 230, 140);
+      x.textAlign = "center"; x.fillStyle = txt; x.font = "800 36px Unbounded"; x.fillText(r.cur.name, SC.x + SC.w / 2, SC.y + 430);
+      x.font = "700 24px Manrope"; x.fillStyle = mut;
+      [`${S.points} · ${t("kpi.missions")}: ${S.done}`, `${t("kpi.best")}: ${S.bestStreak}`, `${t("col.sub", { a: S.played.length, b: M.templates.length })}`].forEach((l, i) => x.fillText(l, SC.x + SC.w / 2, SC.y + 490 + i * 40));
+      const fl = await loadImg(stickerImg("flamingo", "2")); if (fl) x.drawImage(fl, SC.x + SC.w / 2 - 90, SC.y + 620, 180, 180);
     }
-    x.textAlign = "center"; x.fillStyle = "#fff"; rr(x, 140, 1720, W - 280, 120, 60); x.fill();
-    x.fillStyle = "#1D1033"; x.font = "800 40px Unbounded"; x.fillText(m ? t("poster.can") : t("poster.catch"), W / 2, 1778);
-    x.font = "700 28px Manrope"; x.fillText(`t.me/${CFG.BOT_USERNAME}`, W / 2, 1818);
-    const url = c.toDataURL("image/png"), ov = $("#overlay"); ov.className = "overlay dim";
+    x.restore();
+    // призыв внизу
+    x.textAlign = "center"; x.fillStyle = "rgba(255,255,255,.95)"; rr(x, 150, 1700, W - 300, 132, 66); x.fill();
+    x.fillStyle = "#1D1033"; x.font = "800 42px Unbounded"; x.fillText(m ? t("poster.can") : t("poster.catch"), W / 2, 1760);
+    x.font = "700 28px Manrope"; x.fillStyle = "#FF2E88"; x.fillText(`t.me/${CFG.BOT_USERNAME}`, W / 2, 1804);
+    let url; try { url = c.toDataURL("image/jpeg", 0.92); } catch (e) { toast(t("poster.hold")); return; }
+    const ov = $("#overlay"); ov.className = "overlay dim";
     ov.innerHTML = `<img src="${url}" alt=""><div class="resp-sub" style="opacity:.7;margin-top:12px">${t("poster.hold")}</div>
       <div class="actions"><button class="btn sun" id="ovShare">${ic("send")}${t("btn.share")}</button><button class="btn ghost" id="ovClose">${t("btn.close")}</button></div>`;
     $("#ovClose").onclick = () => { ov.className = "overlay hidden"; if (m) go("home"); };
     $("#ovShare").onclick = async () => {
-      try { const blob = await (await fetch(url)).blob(), file = new File([blob], "random-city.png", { type: "image/png" });
+      try { const blob = await (await fetch(url)).blob(), file = new File([blob], "random-city.jpg", { type: "image/jpeg" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; } } catch (e) {}
       if (m) shareMission(m, "share.done"); else toast(t("poster.hold"));
     };
@@ -749,7 +766,7 @@
     im.classList.add("broken");
   }, true);
   function preloadImages() {
-    const list = ["hero-couple.webp?v=" + V, ...["travel", "sport", "thrill", "love", "nature", "chill", "lux", "crime"].map((c) => `cats/${c}.webp?v=${V}`), ...RANK_AT.map((_, i) => `ranks/${i}.webp?v=${V}`)];
+    const list = ["hero-couple.webp?v=" + V, ...["travel", "sport", "thrill", "love", "nature", "chill", "lux", "crime"].map((c) => `cats/${c}.webp?v=${V}`), ...RANK_AT.map((_, i) => `ranks/${i}.webp?v=${V}`), ...CONTACTS.map((c) => `contacts/${c}.webp?v=${V}`), "poster-phone.webp?v=" + V];
     list.forEach((src, k) => setTimeout(() => { const im = new Image(); im.src = "assets/" + src; }, 300 + k * 60));
   }
   function applyTheme() {
