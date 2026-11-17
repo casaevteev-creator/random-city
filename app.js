@@ -327,7 +327,7 @@
   // ----- онбординг -----
   function vOnboarding() {
     screen().innerHTML = `<div class="onb">
-      <div class="scene">${sceneSVG()}
+      <div class="scene photo"><img class="art" src="assets/hero-couple.jpg" alt="" fetchpriority="high">
         <div class="over"><span class="logo">${esc(t("app"))}</span><button class="pill" id="lang">${ic("globe")}${L.code.toUpperCase()}</button></div>
         <div class="hello"><h1 class="t1">${t("onb.title")}</h1><div class="cap">${t("onb.sub")}</div></div>
       </div>
