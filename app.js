@@ -49,6 +49,8 @@
   ].map(([id, ic]) => ({ id, ic }));
   const SEASON1_END = "2026-12-19";
   const catImg = (c) => `assets/cats/${c}.webp?v=${V}`;
+  const tplImg = (tp) => (tp.img ? `assets/scenes/${tp.img}.webp?v=${V}` : catImg(tp.cat));
+  const homeImg = (tod) => `assets/home/${tod === "evening" ? "sunset" : tod === "night" ? "night" : "morning"}.webp?v=${V}`;
   const rankImg = (i) => `assets/ranks/${i}.webp?v=${V}`;
 
   // ---------- иконки ----------
@@ -359,13 +361,13 @@
         <button class="btn main" id="spin" style="margin-top:14px">${ic("dice")}${t("home.who")}</button></div>`;
     }
     screen().innerHTML = `
-      <div class="scene">${sceneSVG(todLayer(tod))}
+      <div class="scene photo"><img class="art" src="${homeImg(tod)}" alt="">
         <div class="over"><span class="logo">${esc(t("app"))}</span><span class="pill"><img src="${rankImg(r.i)}" alt="">${S.points}</span></div>
         <div class="hello"><h1 class="t1 cap1">${t("home.status", { day, tod: t("tod." + tod) })}</h1><div class="cap">${S.streak ? t("streak", { n: S.streak }) + " 🔥" : t("slogan")}</div></div>
       </div>
       <div class="lift">${main}</div>
       ${!dailyDone && !S.active && !S.pending ? `<button class="daily-card" id="daily">
-        <img src="${catImg(dx.tp.cat)}" alt=""><div class="dc-body"><div class="cap">${t("home.daily")} · ${t("home.dailySub", { n: reward(dm) })}</div>
+        <img src="${tplImg(dx.tp)}" alt=""><div class="dc-body"><div class="cap">${t("home.daily")} · ${t("home.dailySub", { n: reward(dm) })}</div>
         <div class="t3">${esc(dx.title)}</div><div class="row" style="gap:6px;margin-top:6px">${avatar(dm.c, 22)}<span class="cap">${esc(cName(dm.c))}</span>${stars(dm.st)}</div></div></button>` : ""}
       <div class="sec"><h2 class="t2">${t("home.contacts")}</h2></div>
       <div class="card list contacts">${order.map((c) => { const p = preview(c);
@@ -408,7 +410,7 @@
   function missionCard(m, active) {
     const x = mtext(m), done = (active && m.steps) || [];
     return `<div class="b them card-b"><div class="mcard">
-      <img class="mimg" src="${catImg(x.tp.cat)}" alt="">
+      <img class="mimg" src="${tplImg(x.tp)}" alt="">
       <div class="mbody">
         <div class="row between">${stars(m.st)}<span class="cap">#${seedCode(m.seed)}</span></div>
         <h3 class="mtitle">${esc(x.title)}</h3>
@@ -584,7 +586,7 @@
   // =========================================================
   async function vOnb() {
     screen().innerHTML = `<div class="onb">
-      <div class="scene photo tall"><img class="art" src="assets/hero-couple.webp?v=${V}" alt="" fetchpriority="high">
+      <div class="scene photo tall"><video class="art" src="assets/hero-loop.mp4?v=${V}" poster="assets/hero-poster.webp?v=${V}" autoplay muted loop playsinline webkit-playsinline preload="auto"></video>
         <div class="over"><span class="logo">${esc(t("app"))}</span><button class="pill" id="lang">${ic("globe")}${L.code.toUpperCase()}</button></div>
         <div class="hello"><h1 class="t1">${t("onb.hero")}</h1><div class="cap">${t("onb.sub")}</div></div></div>
       <div style="padding:18px 0"><button class="btn main" id="start">${t("onb.start")}</button></div></div>`;
@@ -631,7 +633,7 @@
       ${groups.map((g) => { const list = M.templates.filter((x) => x.mood === g); const got = list.filter((x) => S.played.includes(x.id)).length;
         return `<div class="sec"><h2 class="t2">${g === "unk" ? esc(cName("unk")) : t("mood." + g)}</h2><span class="cap">${got}/${list.length}</span></div>
         <div class="cgrid">${list.map((x) => { const ok = S.played.includes(x.id); const hidden = g === "unk" && !ok;
-          return `<div class="ctile ${ok ? "ok" : ""}"><img src="${catImg(x.cat)}" alt=""><div class="ct"><b>${hidden ? "???" : esc(fill(tx(x.title), { slots: dsl }))}</b>
+          return `<div class="ctile ${ok ? "ok" : ""}"><img src="${tplImg(x)}" alt=""><div class="ct"><b>${hidden ? "???" : esc(fill(tx(x.title), { slots: dsl }))}</b>
           <span>${ok ? ic("check") : ""}${stars(x.st)}</span></div></div>`; }).join("")}</div>`; }).join("")}`;
   }
 
@@ -690,8 +692,8 @@
   async function showPoster(m) {
     try { await document.fonts.ready; } catch (e) {}
     const W = 1080, H = 1935, SC = { x: 336, y: 620, w: 408, h: 888, r: 46 }; // экран телефона на фоне
-    const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
-    const bg = await loadImg(`assets/poster-phone.webp?v=${V}`);
+    const c = document.createElement("canvas"); c.width = W; c.height = H; let x = c.getContext("2d");
+    const [bg, mask] = await Promise.all([loadImg(`assets/poster-phone.webp?v=${V}`), loadImg(`assets/poster-mask.png?v=${V}`)]);
     if (bg) x.drawImage(bg, 0, 0, W, H); else { const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#5B2BE0"); g.addColorStop(1, "#FF8A4C"); x.fillStyle = g; x.fillRect(0, 0, W, H); }
     // заголовок в небе
     x.textAlign = "center"; x.shadowColor = "rgba(30,10,50,.45)"; x.shadowBlur = 24;
@@ -701,7 +703,8 @@
     head.forEach((l, i) => x.fillText(l, W / 2, 255 + i * 92 - (head.length - 1) * 20));
     x.fillStyle = "#FFD36B"; x.font = "700 40px Manrope"; x.fillText("★".repeat(m ? m.st : 6), W / 2, 255 + head.length * 92 - (head.length - 1) * 20 + 4);
     x.shadowBlur = 0;
-    // экран телефона
+    // экран телефона рисуем на отдельном холсте и вырезаем по маске зелёного экрана — пальцы остаются сверху
+    const main = x, scv = document.createElement("canvas"); scv.width = W; scv.height = H; x = scv.getContext("2d");
     x.save(); rr(x, SC.x - 4, SC.y - 4, SC.w + 8, SC.h + 8, SC.r); x.clip();
     const dark = root.dataset.theme === "dark";
     x.fillStyle = dark ? "#130B21" : "#FFF5EF"; x.fillRect(SC.x - 4, SC.y - 4, SC.w + 8, SC.h + 8);
@@ -710,7 +713,7 @@
     const circleImg = (im, cx, cy, r) => { if (!im) return; x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.clip(); x.drawImage(im, cx - r, cy - r, r * 2, r * 2); x.restore(); };
     x.textAlign = "left";
     if (m) {
-      const tx_ = mtext(m), [av, cat, stk] = await Promise.all([loadImg(avImg(m.c)), loadImg(catImg(tx_.tp.cat)), loadImg(stickerImg(m.c, "win"))]);
+      const tx_ = mtext(m), [av, cat, stk] = await Promise.all([loadImg(avImg(m.c)), loadImg(tplImg(tx_.tp)), loadImg(stickerImg(m.c, "win"))]);
       // шапка чата
       circleImg(av, X0 + 26, y + 26, 26);
       x.fillStyle = txt; x.font = "800 24px Manrope"; x.fillText(cName(m.c), X0 + 64, y + 22);
@@ -721,13 +724,13 @@
         const bx = alignRight ? X0 + CW - bw : X0; x.fillStyle = fill; rr(x, bx, y, bw, bh, 18); x.fill(); x.fillStyle = color; ls.forEach((l, i) => x.fillText(l, bx + 17, y + 33 + i * 28)); y += bh + 10; };
       bub(tx_.intro[0], card, txt);
       // карточка миссии
-      x.font = "800 27px Unbounded"; const tlN = Math.min(2, wrapLines(x, tx_.title, CW - 32).length); const cardH = 182 + tlN * 36 + 14 + tx_.steps.length * 30 + 22; x.fillStyle = card; rr(x, X0, y, CW, cardH, 22); x.fill();
+      x.font = "800 27px Unbounded"; const tlN = Math.min(2, wrapLines(x, tx_.title, CW - 32).length); x.font = "700 18px Manrope"; const stL = tx_.steps.map((s) => wrapLines(x, s, CW - 70).slice(0, 2)); const cardH = 182 + tlN * 36 + 14 + stL.reduce((s2, l) => s2 + 8 + l.length * 24, 0) + 26; x.fillStyle = card; rr(x, X0, y, CW, cardH, 22); x.fill();
       x.save(); rr(x, X0, y, CW, 150, 22); x.clip(); if (cat) x.drawImage(cat, X0, y - 20, CW, CW * cat.height / cat.width); x.restore();
       let yy = y + 182; x.fillStyle = "#FF6A3D"; x.font = "700 20px Manrope"; x.fillText("★".repeat(m.st), X0 + 16, yy);
       x.fillStyle = txt; x.font = "800 27px Unbounded"; wrapLines(x, tx_.title, CW - 32).slice(0, 2).forEach((l) => { yy += 36; x.fillText(l, X0 + 16, yy); });
       x.font = "700 18px Manrope"; yy += 14;
-      tx_.steps.forEach((s) => { yy += 30; x.fillStyle = "#FF6A3D"; rr(x, X0 + 16, yy - 18, 22, 22, 6); x.fill(); x.fillStyle = "#fff"; x.font = "800 16px Manrope"; x.fillText("✓", X0 + 21, yy - 1);
-        x.fillStyle = mut; x.font = "700 18px Manrope"; x.fillText(wrapLines(x, s, CW - 70)[0], X0 + 48, yy); });
+      stL.forEach((ls) => { yy += 32; x.fillStyle = "#FF6A3D"; rr(x, X0 + 16, yy - 18, 22, 22, 6); x.fill(); x.fillStyle = "#fff"; x.font = "800 16px Manrope"; x.fillText("✓", X0 + 21, yy - 1);
+        x.fillStyle = mut; x.font = "700 18px Manrope"; ls.forEach((l, i) => x.fillText(l, X0 + 48, yy + i * 24)); yy += (ls.length - 1) * 24; });
       y += cardH + 12;
       bub(t("u.done"), "#FF4D8D", "#fff", true);
       bub(cLine(m.c, "win", m.seed), card, txt);
@@ -741,6 +744,8 @@
       const fl = await loadImg(stickerImg("flamingo", "2")); if (fl) x.drawImage(fl, SC.x + SC.w / 2 - 90, SC.y + 620, 180, 180);
     }
     x.restore();
+    if (mask) { x.globalCompositeOperation = "destination-in"; x.drawImage(mask, 0, 0, W, H); x.globalCompositeOperation = "source-over"; }
+    main.drawImage(scv, 0, 0); x = main;
     // призыв внизу
     x.textAlign = "center"; x.fillStyle = "rgba(255,255,255,.95)"; rr(x, 150, 1700, W - 300, 132, 66); x.fill();
     x.fillStyle = "#1D1033"; x.font = "800 42px Unbounded"; x.fillText(m ? t("poster.can") : t("poster.catch"), W / 2, 1760);
@@ -766,7 +771,7 @@
     im.classList.add("broken");
   }, true);
   function preloadImages() {
-    const list = ["hero-couple.webp?v=" + V, ...["travel", "sport", "thrill", "love", "nature", "chill", "lux", "crime"].map((c) => `cats/${c}.webp?v=${V}`), ...RANK_AT.map((_, i) => `ranks/${i}.webp?v=${V}`), ...CONTACTS.map((c) => `contacts/${c}.webp?v=${V}`), "poster-phone.webp?v=" + V];
+    const list = ["hero-couple.webp?v=" + V, ...["travel", "sport", "thrill", "love", "nature", "chill", "lux", "crime"].map((c) => `cats/${c}.webp?v=${V}`), ...RANK_AT.map((_, i) => `ranks/${i}.webp?v=${V}`), ...CONTACTS.map((c) => `contacts/${c}.webp?v=${V}`), "poster-phone.webp?v=" + V, `home/${homeImg(nowTod()).split("/home/")[1]}`];
     list.forEach((src, k) => setTimeout(() => { const im = new Image(); im.src = "assets/" + src; }, 300 + k * 60));
   }
   function applyTheme() {
